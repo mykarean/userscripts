@@ -313,14 +313,5 @@ main();
     }
 })();
 
-// function main() {
-//     // addTheMovieDb: second try
-//     if (tmdbDataPromise.id) {
-//         console.log("second try");
-//         addTheMovieDb(tmdbDataPromise);
-//     }
-//     addDdl();
-// }
-
 // GM_setValue("authorsMode", true);
-// document.addEventListener("DOMContentLoaded", main);
+document.addEventListener("DOMContentLoaded", main);
