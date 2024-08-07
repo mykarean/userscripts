@@ -8,6 +8,8 @@
 // @grant          GM_getValue
 // @grant          GM_setValue
 // @run-at         document-start
+// @compatible     chrome
+// @license        GPL3
 // ==/UserScript==
 
 "use strict";
