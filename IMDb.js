@@ -19,9 +19,7 @@
 // -----------------------------------------------------------------------------------------------------
 
 const imdbId = window.location.pathname.match(/title\/(tt\d+)\//)[1];
-let tmdbData = getTmdbData();
-// GM_setValue("authorsMode", true);
-const authorsMode = await GM_getValue("authorsMode", false);
+let tmdbDataPromise = getTmdbData();
 
 async function getHeaderContainer() {
     // return document.querySelector('[data-testid="hero__pageTitle"]').parentElement.parentElement;
@@ -116,13 +114,13 @@ async function getTmdbData() {
                     result = data.tv_results[0];
                 }
                 const roundedVoteCount = Math.round(result.vote_average * 10) / 10;
-                tmdbData = {
+                tmdbDataPromise = {
                     mediaType: result.media_type,
                     id: result.id,
                     roundedVoteCount: roundedVoteCount,
                     voteCount: result.vote_count,
                 };
-                return tmdbData;
+                return tmdbDataPromise;
             } else {
                 throw new Error("No data found for the provided IMDb ID.");
             }
@@ -144,7 +142,7 @@ function addTheMovieDb(tmdbData) {
             clonedElement.setAttribute("tmdb", "");
 
             // add TMDb data
-            clonedElement.childNodes[0].innerText = "TMDb-BEWERTUNG";
+            clonedElement.childNodes[0].innerText = "TMDB-BEWERTUNG";
             clonedElement.querySelector(
                 "[aria-label='Benutzerbewertungen anzeigen']"
             ).href = `https://www.themoviedb.org/${tmdbData.mediaType}/${tmdbData.id}`;
@@ -210,7 +208,9 @@ function addTheMovieDbOld() {
     }
 }
 
-function addDdl() {
+async function addDdl() {
+    const authorsMode = await GM_getValue("authorsMode", false);
+
     if (authorsMode) {
         waitForElement("span.rating-bar__base-button[tmdb]").then((ratingElement) => {
             if (!document.querySelector("a#ddl-button")) {
@@ -276,13 +276,14 @@ function addGenresToTitle() {
     }
 }
 
-async function addAndKeepsElementsInHeaderContainer() {
-    addTheMovieDb(await tmdbData);
+// add and keep Elements in Header Container
+async function main() {
+    addTheMovieDb(await tmdbDataPromise);
     addDdl();
     addGenresToTitle();
 
-    const observer = new MutationObserver(() => {
-        addTheMovieDb(tmdbData);
+    const observer = new MutationObserver(async () => {
+        addTheMovieDb(await tmdbDataPromise);
         addDdl();
         addGenresToTitle();
     });
@@ -295,21 +296,31 @@ async function addAndKeepsElementsInHeaderContainer() {
 // Main
 // -----------------------------------------------------------------------------------------------------
 
-function main() {
-    // addTheMovieDb: second try
-    if (tmdbData.id) {
-        console.log("second try");
-        addTheMovieDb(tmdbData);
+main();
+
+// for single execution debug information
+(async function () {
+    try {
+        let tmdbData = await tmdbDataPromise; // Warten auf die Auflösung des Promises
+        if (tmdbData) {
+            console.log(tmdbData);
+            // if (tmdbData.id) {
+            //     addTheMovieDb(tmdbData);
+            // }
+        }
+    } catch (error) {
+        console.error("Fehler beim Abrufen der TMDB-Daten:", error);
     }
-    addDdl();
-}
+})();
 
-addAndKeepsElementsInHeaderContainer();
-if (await tmdbData) {
-    console.log(tmdbData);
-    // if (tmdbData.id) {
-    //     addTheMovieDb(tmdbData);
-    // }
-}
+// function main() {
+//     // addTheMovieDb: second try
+//     if (tmdbDataPromise.id) {
+//         console.log("second try");
+//         addTheMovieDb(tmdbDataPromise);
+//     }
+//     addDdl();
+// }
 
+// GM_setValue("authorsMode", true);
 // document.addEventListener("DOMContentLoaded", main);
