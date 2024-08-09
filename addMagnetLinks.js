@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name           Magnet Links for BT4G and Limetorrents
 // @description    Adds magnet links to BT4G and Limetorrents
-// @version        20240807
+// @version        20240810
 // @author         resykano
 // @homepage       https://greasyfork.org/en/scripts/502497
 // @namespace      https://greasyfork.org/users/1342111
@@ -9,6 +9,7 @@
 // @match          *://*.limetorrents.*/search/all/*
 // @run-at         document-idle
 // @grant          GM_xmlhttpRequest
+// @grant          GM_addStyle
 // @compatible     chrome
 // @license        GPL3
 // @noframes
@@ -17,8 +18,7 @@
 
 "use strict";
 
-const style = document.createElement("style");
-style.textContent = `
+GM_addStyle(`
     .magnet-link-img {
         cursor: pointer;
         margin: 0px 5px 2px;
@@ -27,8 +27,7 @@ style.textContent = `
         height: 20px;
         transition: filter 0.2s ease;
     }
-`;
-document.head.appendChild(style);
+`);
 
 const hostname = location.hostname;
 let magnetImage = GM_info.script.icon;
@@ -77,7 +76,7 @@ function observeSearchResults() {
         childList: true,
         subtree: true,
         attributes: true,
-        attributeFilter: ['style']    
+        attributeFilter: ["style"],
     });
 }
 
@@ -116,10 +115,10 @@ function getSearchResultLinks() {
         const elements = document.querySelectorAll('a[href*="/magnet/"]:not([href^="magnet:"])');
 
         // Filter and return only the visible elements (those without 'display: none' in their parent chain)
-        return Array.from(elements).filter(element => {
+        return Array.from(elements).filter((element) => {
             let current = element;
             while (current) {
-                if (window.getComputedStyle(current).display === 'none') {
+                if (window.getComputedStyle(current).display === "none") {
                     return false;
                 }
                 current = current.parentElement;
@@ -134,9 +133,9 @@ function getSearchResultLinks() {
 async function processLinksInSearchResultsBt4g(link) {
     try {
         const details = {
-            method: 'GET',
+            method: "GET",
             url: link.href,
-            timeout: 15000
+            timeout: 5000,
         };
 
         const response = await requestGM_XHR(details);
@@ -279,20 +278,22 @@ function addClickAllMagnetLinks() {
 }
 
 function main() {
-    // search results page
-    if (window.location.href.match(/\/search/)) {
-        addClickAllMagnetLinks();
-        observeSearchResults();
-        processLinksInSearchResults();
-    }
+    switch (true) {
+        // search results page
+        case /\/search/.test(window.location.href):
+            addClickAllMagnetLinks();
+            observeSearchResults();
+            processLinksInSearchResults();
+            break;
 
-    // BT4G only: torrent detail page
-    if (window.location.href.match(/\/magnet/)) {
-        const link = document.querySelector('a[href*="/hash/"]:not([href^="magnet:"])');
-        const hash = extractHashFromUrl(link.href || "");
-        if (hash) {
-            insertMagnetLink(link, hash);
-        }
+        // BT4G only: torrent detail page
+        case /\/magnet/.test(window.location.href):
+            const link = document.querySelector('a[href*="/hash/"]:not([href^="magnet:"])');
+            const hash = extractHashFromUrl(link ? link.href : "");
+            if (hash) {
+                insertMagnetLink(link, hash);
+            }
+            break;
     }
 }
 
