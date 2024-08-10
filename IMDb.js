@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name           IMDb with TMDB votes
-// @description    Adds votes from The Movie Database and displays & formats genres under the title, as in the past
-// @version        20240809
+// @name           IMDb with TMDB ratings
+// @description    Adds ratings from The Movie Database and allows you to copy movie information by clicking on a non href linked item under the title
+// @version        20240810
 // @author         resykano
 // @icon           https://icons.duckduckgo.com/ip2/imdb.com.ico
 // @match          https://www.imdb.com/title/*
@@ -21,30 +21,6 @@
 
 const imdbId = window.location.pathname.match(/title\/(tt\d+)\//)[1];
 let tmdbDataPromise = getTmdbData();
-
-/**
- * Inserts new Nodes into DOM
- *
- * @param {string} position before, after, inside
- * @param {object} newElement
- * @param {object} existingNode
- */
-function insertElement(position, newElement, existingNode) {
-    switch (position) {
-        case "before": {
-            existingNode?.parentNode.insertBefore(newElement, existingNode);
-            break;
-        }
-        case "after": {
-            existingNode?.parentNode.insertBefore(newElement, existingNode.nextSibling);
-            break;
-        }
-        case "inside": {
-            existingNode?.insertBefore(newElement, existingNode.lastElementChild);
-            break;
-        }
-    }
-}
 
 // -----------------------------------------------------------------------------------------------------
 // Functions
@@ -92,32 +68,42 @@ async function getTmdbData() {
     }
 }
 
-function addTheMovieDb(tmdbData) {
-    const ratingElement = document.querySelector('div[data-testid="hero-rating-bar__aggregate-rating"]');
-    if (ratingElement && !document.querySelector("span.rating-bar__base-button[tmdb]")) {
-        let clonedElement = ratingElement.cloneNode(true);
+async function addTheMovieDbRating() {
+    const ratingElementImdb = document.querySelector('div[data-testid="hero-rating-bar__aggregate-rating"]');
+
+    if (ratingElementImdb && !document.querySelector("span.rating-bar__base-button[tmdb]")) {
+        let clonedElement = ratingElementImdb.cloneNode(true);
         clonedElement.setAttribute("tmdb", "");
 
-        // add TMDb data
+        // create TMDB Badge
         clonedElement.childNodes[0].innerText = "TMDB-BEWERTUNG";
-        clonedElement.querySelector(
-            "[aria-label='Benutzerbewertungen anzeigen']"
-        ).href = `https://www.themoviedb.org/${tmdbData.mediaType}/${tmdbData.id}`;
-        clonedElement.querySelector("div[data-testid=hero-rating-bar__aggregate-rating__score] > span").innerText =
-            tmdbData.roundedVoteCount;
+        clonedElement.querySelector("div[data-testid=hero-rating-bar__aggregate-rating__score] > span").innerText = "n/a";
         clonedElement.querySelector("div[data-testid=hero-rating-bar__aggregate-rating__score]").nextSibling.nextSibling.innerText =
-            tmdbData.voteCount;
+            "n/a";
 
         // Convert div to span element, otherwise it will be removed from IMDb scripts
-        let theMovieDbElement = document.createElement("span");
+        let ratingElementTheMovieDb = document.createElement("span");
         // Transfer all attributes from the cloned div element to the new span element
         for (let attr of clonedElement.attributes) {
-            theMovieDbElement.setAttribute(attr.name, attr.value);
+            ratingElementTheMovieDb.setAttribute(attr.name, attr.value);
         }
         // Transfer the content of the cloned div element to the new span element
-        theMovieDbElement.innerHTML = clonedElement.innerHTML;
+        ratingElementTheMovieDb.innerHTML = clonedElement.innerHTML;
 
-        insertElement("before", theMovieDbElement, ratingElement);
+        ratingElementImdb.insertAdjacentElement("beforebegin", ratingElementTheMovieDb);
+
+        // add data from TMDB
+        const tmdbData = await tmdbDataPromise;
+        if (tmdbData) {
+            ratingElementTheMovieDb.querySelector(
+                "[aria-label='Benutzerbewertungen anzeigen']"
+            ).href = `https://www.themoviedb.org/${tmdbData.mediaType}/${tmdbData.id}`;
+            ratingElementTheMovieDb.querySelector("div[data-testid=hero-rating-bar__aggregate-rating__score] > span").innerText =
+                tmdbData.roundedVoteCount;
+            ratingElementTheMovieDb.querySelector(
+                "div[data-testid=hero-rating-bar__aggregate-rating__score]"
+            ).nextSibling.nextSibling.innerText = tmdbData.voteCount;
+        }
     }
 }
 
@@ -125,8 +111,9 @@ async function addDdl() {
     const authorsMode = await GM_getValue("authorsMode", false);
 
     if (authorsMode) {
-        const ratingElement = document.querySelector("span.rating-bar__base-button[tmdb]");
-        if (!document.querySelector("a#ddl-button")) {
+        const ratingElementTheMovieDb = document.querySelector("span.rating-bar__base-button[tmdb]");
+
+        if (!document.querySelector("a#ddl-button") && ratingElementTheMovieDb) {
             let ddlElement = document.createElement("a");
             ddlElement.id = "ddl-button";
             ddlElement.href = `https://ddl-warez.cc/?s=${imdbId}`;
@@ -141,7 +128,7 @@ async function addDdl() {
 
             ddlElement.appendChild(imgElement);
 
-            insertElement("before", ddlElement, ratingElement);
+            ratingElementTheMovieDb.insertAdjacentElement("beforebegin", ddlElement);
         }
     }
 }
@@ -184,14 +171,12 @@ function addGenresToTitle() {
 
 let metadataAsText = "";
 function collectMetadataForClipboard() {
+    let title = document.querySelector("span.hero__primary-text")?.textContent;
+    let genres = document.querySelector("div[data-testid='interests'] div.ipc-chip-list__scroller")?.childNodes;
+    let additionalMetadata = document.querySelector('[data-testid="hero__pageTitle"]')?.parentElement?.querySelector("ul");
+
     // if click listener does not exist
-    if (!document.querySelector("ul.collectMetadataForClipboardListener")) {
-        console.log("collectMetadataForClipboard");
-
-        let title = document.querySelector("span.hero__primary-text").textContent;
-        let genres = document.querySelector("div[data-testid='interests'] div.ipc-chip-list__scroller")?.childNodes;
-        let additionalMetadata = document.querySelector('[data-testid="hero__pageTitle"]')?.parentElement?.querySelector("ul");
-
+    if (!document.querySelector("ul.collectMetadataForClipboardListener") && title && genres && additionalMetadata) {
         if (genres && additionalMetadata) {
             if (metadataAsText === "") {
                 // add title
@@ -220,19 +205,15 @@ function collectMetadataForClipboard() {
 }
 
 // add and keep elements in header container
-async function main() {
-    addTheMovieDb(await tmdbDataPromise);
-    addDdl();
-    // addGenresToTitle();
-
-    const observer = new MutationObserver(async () => {
-        addTheMovieDb(await tmdbDataPromise);
+function main() {
+    const observer = new MutationObserver(() => {
+        addTheMovieDbRating();
         addDdl();
         // addGenresToTitle();
         collectMetadataForClipboard();
     });
 
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
 }
 
 // -----------------------------------------------------------------------------------------------------
@@ -254,4 +235,3 @@ main();
 })();
 
 // GM_setValue("authorsMode", true);
-document.addEventListener("DOMContentLoaded", main);
