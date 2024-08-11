@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name           IMDb with TMDB ratings
 // @description    Adds ratings from The Movie Database and allows you to copy movie information by clicking on a non href linked item under the title
-// @version        20240810
+// @version        20240811
 // @author         resykano
 // @icon           https://icons.duckduckgo.com/ip2/imdb.com.ico
 // @match          https://www.imdb.com/title/*
@@ -72,23 +72,24 @@ async function addTheMovieDbRating() {
     const ratingElementImdb = document.querySelector('div[data-testid="hero-rating-bar__aggregate-rating"]');
 
     if (ratingElementImdb && !document.querySelector("span.rating-bar__base-button[tmdb]")) {
-        let clonedElement = ratingElementImdb.cloneNode(true);
-        clonedElement.setAttribute("tmdb", "");
+        let clonedTempRatingElement = ratingElementImdb.cloneNode(true);
+        clonedTempRatingElement.setAttribute("tmdb", "");
 
         // create TMDB Badge
-        clonedElement.childNodes[0].innerText = "TMDB-BEWERTUNG";
-        clonedElement.querySelector("div[data-testid=hero-rating-bar__aggregate-rating__score] > span").innerText = "n/a";
-        clonedElement.querySelector("div[data-testid=hero-rating-bar__aggregate-rating__score]").nextSibling.nextSibling.innerText =
-            "n/a";
+        clonedTempRatingElement.childNodes[0].innerText = "TMDB RATING";
+        clonedTempRatingElement.querySelector("div[data-testid=hero-rating-bar__aggregate-rating__score] > span").innerText = "n/a";
+        clonedTempRatingElement.querySelector(
+            "div[data-testid=hero-rating-bar__aggregate-rating__score]"
+        ).nextSibling.nextSibling.innerText = "n/a";
 
         // Convert div to span element, otherwise it will be removed from IMDb scripts
         let ratingElementTheMovieDb = document.createElement("span");
         // Transfer all attributes from the cloned div element to the new span element
-        for (let attr of clonedElement.attributes) {
+        for (let attr of clonedTempRatingElement.attributes) {
             ratingElementTheMovieDb.setAttribute(attr.name, attr.value);
         }
-        // Transfer the content of the cloned div element to the new span element
-        ratingElementTheMovieDb.innerHTML = clonedElement.innerHTML;
+        // Transfer the content of the cloned IMDb rating element to the new span element
+        ratingElementTheMovieDb.innerHTML = clonedTempRatingElement.innerHTML;
 
         ratingElementImdb.insertAdjacentElement("beforebegin", ratingElementTheMovieDb);
 
