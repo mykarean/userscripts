@@ -76,7 +76,7 @@ async function addTheMovieDbRating() {
         clonedTempRatingElement.setAttribute("tmdb", "");
 
         // create TMDB Badge
-        clonedTempRatingElement.childNodes[0].innerText = "TMDB RATING";
+        clonedTempRatingElement.childNodes[0].innerText = "TMDB-RATING";
         clonedTempRatingElement.querySelector("div[data-testid=hero-rating-bar__aggregate-rating__score] > span").innerText = "n/a";
         clonedTempRatingElement.querySelector(
             "div[data-testid=hero-rating-bar__aggregate-rating__score]"
