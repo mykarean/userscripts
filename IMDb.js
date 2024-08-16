@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name           IMDb with TMDB ratings
 // @description    Adds ratings from The Movie Database and allows you to copy movie information by clicking on a non href linked item under the title
-// @version        20240811
+// @version        20240816
 // @author         resykano
 // @icon           https://icons.duckduckgo.com/ip2/imdb.com.ico
-// @match          https://www.imdb.com/title/*
+// @match          https://*.imdb.com/title/*
 // @grant          GM_getValue
 // @grant          GM_setValue
 // @grant          GM_addStyle
@@ -20,14 +20,61 @@
 // -----------------------------------------------------------------------------------------------------
 
 const imdbId = window.location.pathname.match(/title\/(tt\d+)\//)[1];
-let tmdbDataPromise = getTmdbData();
+let tmdbDataPromise = null;
 
 // -----------------------------------------------------------------------------------------------------
 // Functions
 // -----------------------------------------------------------------------------------------------------
 
+// create the initial rating template
+function createRatingTemplate(source) {
+    const ratingElementImdb = document.querySelector('div[data-testid="hero-rating-bar__aggregate-rating"]');
+
+    if (ratingElementImdb && !document.querySelector(`span.rating-bar__base-button[${source.toLowerCase()}]`)) {
+        let clonedTempRatingElement = ratingElementImdb.cloneNode(true);
+        clonedTempRatingElement.setAttribute(source.toLowerCase(), "");
+
+        // create rating badge
+        clonedTempRatingElement.childNodes[0].innerText = `${source}-RATING`;
+        clonedTempRatingElement.querySelector("div[data-testid=hero-rating-bar__aggregate-rating__score] > span").innerText = "n/a";
+        clonedTempRatingElement.querySelector(
+            "div[data-testid=hero-rating-bar__aggregate-rating__score]"
+        ).nextSibling.nextSibling.innerText = "n/a";
+
+        // convert div to span element, otherwise it will be removed from IMDb scripts
+        let ratingElement = document.createElement("span");
+        // Transfer all attributes from the cloned div element to the new span element
+        for (let attr of clonedTempRatingElement.attributes) {
+            ratingElement.setAttribute(attr.name, attr.value);
+        }
+        // transfer the content of the cloned IMDb rating element to the new span element
+        ratingElement.innerHTML = clonedTempRatingElement.innerHTML;
+
+        ratingElementImdb.insertAdjacentElement("beforebegin", ratingElement);
+        return ratingElement;
+    }
+    return null;
+}
+
+// update the rating template with actual data
+function updateRatingTemplate(newRatingElement, ratingData) {
+    if (newRatingElement && ratingData) {
+        if (ratingData.source === "TMDB") {
+            newRatingElement.querySelector("a").href = `https://www.themoviedb.org/${ratingData.mediaType}/${ratingData.id}`;
+        }
+        newRatingElement.querySelector("div[data-testid=hero-rating-bar__aggregate-rating__score] > span").innerText =
+            ratingData.roundedVoteCount;
+        newRatingElement.querySelector("div[data-testid=hero-rating-bar__aggregate-rating__score]").nextSibling.nextSibling.innerText =
+            ratingData.voteCount;
+    }
+}
+
 async function getTmdbData() {
     try {
+        if (tmdbDataPromise) {
+            return tmdbDataPromise;
+        }
+
         if (imdbId) {
             const options = {
                 method: "GET",
@@ -38,74 +85,53 @@ async function getTmdbData() {
                 },
             };
 
-            const response = await fetch(`https://api.themoviedb.org/3/find/${imdbId}?external_source=imdb_id`, options);
-            const data = await response.json();
+            tmdbDataPromise = fetch(`https://api.themoviedb.org/3/find/${imdbId}?external_source=imdb_id`, options)
+                .then((response) => response.json())
+                .then((data) => {
+                    if (data && (data.movie_results.length > 0 || data.tv_results.length > 0)) {
+                        let result;
+                        if (data.movie_results.length > 0) {
+                            result = data.movie_results[0];
+                        } else if (data.tv_results.length > 0) {
+                            result = data.tv_results[0];
+                        }
+                        const roundedVoteCount = Math.round(result.vote_average * 10) / 10;
+                        const ratingData = {
+                            source: "TMDB",
+                            mediaType: result.media_type,
+                            id: result.id,
+                            roundedVoteCount: roundedVoteCount,
+                            voteCount: result.vote_count,
+                        };
+                        console.log(ratingData);
 
-            if (data && (data.movie_results.length > 0 || data.tv_results.length > 0)) {
-                let result;
-                if (data.movie_results.length > 0) {
-                    result = data.movie_results[0];
-                } else if (data.tv_results.length > 0) {
-                    result = data.tv_results[0];
-                }
-                const roundedVoteCount = Math.round(result.vote_average * 10) / 10;
-                tmdbDataPromise = {
-                    mediaType: result.media_type,
-                    id: result.id,
-                    roundedVoteCount: roundedVoteCount,
-                    voteCount: result.vote_count,
-                };
-                return tmdbDataPromise;
-            } else {
-                throw new Error("No data found for the provided IMDb ID.");
-            }
+                        return ratingData;
+                    } else {
+                        throw new Error("No data found for the provided IMDb ID.");
+                    }
+                });
+
+            return tmdbDataPromise;
         } else {
             throw new Error("IMDb ID not found in URL.");
         }
     } catch (error) {
-        console.error("Error fetching IMDb data:", error);
+        console.error("Error fetching TMDb data:", error);
         return null;
     }
 }
 
-async function addTheMovieDbRating() {
-    const ratingElementImdb = document.querySelector('div[data-testid="hero-rating-bar__aggregate-rating"]');
+async function addTmdbRatingBadge() {
+    const newRatingElement = createRatingTemplate("TMDB");
 
-    if (ratingElementImdb && !document.querySelector("span.rating-bar__base-button[tmdb]")) {
-        let clonedTempRatingElement = ratingElementImdb.cloneNode(true);
-        clonedTempRatingElement.setAttribute("tmdb", "");
-
-        // create TMDB Badge
-        clonedTempRatingElement.childNodes[0].innerText = "TMDB-RATING";
-        clonedTempRatingElement.querySelector("div[data-testid=hero-rating-bar__aggregate-rating__score] > span").innerText = "n/a";
-        clonedTempRatingElement.querySelector(
-            "div[data-testid=hero-rating-bar__aggregate-rating__score]"
-        ).nextSibling.nextSibling.innerText = "n/a";
-
-        // Convert div to span element, otherwise it will be removed from IMDb scripts
-        let ratingElementTheMovieDb = document.createElement("span");
-        // Transfer all attributes from the cloned div element to the new span element
-        for (let attr of clonedTempRatingElement.attributes) {
-            ratingElementTheMovieDb.setAttribute(attr.name, attr.value);
-        }
-        // Transfer the content of the cloned IMDb rating element to the new span element
-        ratingElementTheMovieDb.innerHTML = clonedTempRatingElement.innerHTML;
-
-        ratingElementImdb.insertAdjacentElement("beforebegin", ratingElementTheMovieDb);
-
-        // add data from TMDB
-        const tmdbData = await tmdbDataPromise;
-        if (tmdbData) {
-            ratingElementTheMovieDb.querySelector(
-                "[aria-label='Benutzerbewertungen anzeigen']"
-            ).href = `https://www.themoviedb.org/${tmdbData.mediaType}/${tmdbData.id}`;
-            ratingElementTheMovieDb.querySelector("div[data-testid=hero-rating-bar__aggregate-rating__score] > span").innerText =
-                tmdbData.roundedVoteCount;
-            ratingElementTheMovieDb.querySelector(
-                "div[data-testid=hero-rating-bar__aggregate-rating__score]"
-            ).nextSibling.nextSibling.innerText = tmdbData.voteCount;
-        }
+    // if the template was not created, it already exists
+    if (!newRatingElement) {
+        return;
     }
+
+    const ratingData = await getTmdbData();
+
+    updateRatingTemplate(newRatingElement, ratingData);
 }
 
 async function addDdl() {
@@ -207,8 +233,10 @@ function collectMetadataForClipboard() {
 
 // add and keep elements in header container
 function main() {
+    getTmdbData();
+
     const observer = new MutationObserver(() => {
-        addTheMovieDbRating();
+        addTmdbRatingBadge();
         addDdl();
         // addGenresToTitle();
         collectMetadataForClipboard();
@@ -222,17 +250,5 @@ function main() {
 // -----------------------------------------------------------------------------------------------------
 
 main();
-
-// for one-time debug information
-(async function () {
-    try {
-        let tmdbData = await tmdbDataPromise;
-        if (tmdbData) {
-            console.log(tmdbData);
-        }
-    } catch (error) {
-        console.error("Error when retrieving TMDB data:", error);
-    }
-})();
 
 // GM_setValue("authorsMode", true);
