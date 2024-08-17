@@ -1,13 +1,14 @@
 // ==UserScript==
 // @name           IMDb with TMDB ratings
 // @description    Adds ratings from The Movie Database and allows you to copy movie information by clicking on a non href linked item under the title
-// @version        20240816
+// @version        20240817
 // @author         resykano
 // @icon           https://icons.duckduckgo.com/ip2/imdb.com.ico
 // @match          https://*.imdb.com/title/*
 // @grant          GM_getValue
 // @grant          GM_setValue
 // @grant          GM_addStyle
+// @grant          GM_xmlhttpRequest
 // @run-at         document-start
 // @compatible     chrome
 // @license        GPL3
@@ -20,14 +21,13 @@
 // -----------------------------------------------------------------------------------------------------
 
 const imdbId = window.location.pathname.match(/title\/(tt\d+)\//)[1];
-let tmdbDataPromise = null;
 
 // -----------------------------------------------------------------------------------------------------
 // Functions
 // -----------------------------------------------------------------------------------------------------
 
 // create the initial rating template
-function createRatingTemplate(source) {
+function createRatingBadgeTemplate(source) {
     const ratingElementImdb = document.querySelector('div[data-testid="hero-rating-bar__aggregate-rating"]');
 
     if (ratingElementImdb && !document.querySelector(`span.rating-bar__base-button[${source.toLowerCase()}]`)) {
@@ -35,11 +35,11 @@ function createRatingTemplate(source) {
         clonedTempRatingElement.setAttribute(source.toLowerCase(), "");
 
         // create rating badge
-        clonedTempRatingElement.childNodes[0].innerText = `${source}-RATING`;
-        clonedTempRatingElement.querySelector("div[data-testid=hero-rating-bar__aggregate-rating__score] > span").innerText = "n/a";
+        clonedTempRatingElement.childNodes[0].innerText = `${source} Rating`;
+        clonedTempRatingElement.querySelector("div[data-testid=hero-rating-bar__aggregate-rating__score] > span").innerText = "X";
         clonedTempRatingElement.querySelector(
             "div[data-testid=hero-rating-bar__aggregate-rating__score]"
-        ).nextSibling.nextSibling.innerText = "n/a";
+        ).nextSibling.nextSibling.innerText = "x";
 
         // convert div to span element, otherwise it will be removed from IMDb scripts
         let ratingElement = document.createElement("span");
@@ -59,9 +59,7 @@ function createRatingTemplate(source) {
 // update the rating template with actual data
 function updateRatingTemplate(newRatingElement, ratingData) {
     if (newRatingElement && ratingData) {
-        if (ratingData.source === "TMDB") {
-            newRatingElement.querySelector("a").href = `https://www.themoviedb.org/${ratingData.mediaType}/${ratingData.id}`;
-        }
+        newRatingElement.querySelector("a").href = ratingData.url;
         newRatingElement.querySelector("div[data-testid=hero-rating-bar__aggregate-rating__score] > span").innerText =
             ratingData.roundedVoteCount;
         newRatingElement.querySelector("div[data-testid=hero-rating-bar__aggregate-rating__score]").nextSibling.nextSibling.innerText =
@@ -69,60 +67,56 @@ function updateRatingTemplate(newRatingElement, ratingData) {
     }
 }
 
+let tmdbDataPromise = null;
 async function getTmdbData() {
-    try {
-        if (tmdbDataPromise) {
-            return tmdbDataPromise;
-        }
-
-        if (imdbId) {
-            const options = {
-                method: "GET",
-                headers: {
-                    accept: "application/json",
-                    Authorization:
-                        "Bearer eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiIyMzc1ZGIzOTYwYWVhMWI1OTA1NWMwZmM3ZDcwYjYwZiIsInN1YiI6IjYwYmNhZTk0NGE0YmY2MDA1OWJhNWE1ZSIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.DU51juQWlAIIfZ2lK99b3zi-c5vgc4jAwVz5h2WjOP8",
-                },
-            };
-
-            tmdbDataPromise = fetch(`https://api.themoviedb.org/3/find/${imdbId}?external_source=imdb_id`, options)
-                .then((response) => response.json())
-                .then((data) => {
-                    if (data && (data.movie_results.length > 0 || data.tv_results.length > 0)) {
-                        let result;
-                        if (data.movie_results.length > 0) {
-                            result = data.movie_results[0];
-                        } else if (data.tv_results.length > 0) {
-                            result = data.tv_results[0];
-                        }
-                        const roundedVoteCount = Math.round(result.vote_average * 10) / 10;
-                        const ratingData = {
-                            source: "TMDB",
-                            mediaType: result.media_type,
-                            id: result.id,
-                            roundedVoteCount: roundedVoteCount,
-                            voteCount: result.vote_count,
-                        };
-                        console.log(ratingData);
-
-                        return ratingData;
-                    } else {
-                        throw new Error("No data found for the provided IMDb ID.");
-                    }
-                });
-
-            return tmdbDataPromise;
-        } else {
-            throw new Error("IMDb ID not found in URL.");
-        }
-    } catch (error) {
-        console.error("Error fetching TMDb data:", error);
-        return null;
+    if (tmdbDataPromise) {
+        return tmdbDataPromise;
     }
+
+    if (!imdbId) {
+        throw new Error("IMDb ID not found in URL.");
+    }
+
+    const options = {
+        method: "GET",
+        headers: {
+            accept: "application/json",
+            Authorization:
+                "Bearer eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiIyMzc1ZGIzOTYwYWVhMWI1OTA1NWMwZmM3ZDcwYjYwZiIsInN1YiI6IjYwYmNhZTk0NGE0YmY2MDA1OWJhNWE1ZSIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.DU51juQWlAIIfZ2lK99b3zi-c5vgc4jAwVz5h2WjOP8",
+        },
+    };
+
+    tmdbDataPromise = fetch(`https://api.themoviedb.org/3/find/${imdbId}?external_source=imdb_id`, options)
+        .then((response) => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then((data) => {
+            const result = data.movie_results[0] || data.tv_results[0];
+            if (!result) {
+                throw new Error("No data found for the provided IMDb ID.");
+            }
+            console.log("TMDB: ", result);
+            return {
+                source: "TMDB",
+                id: result.id,
+                roundedVoteCount: (Math.round(result.vote_average * 10) / 10).toLocaleString(), // reduce digits after comma
+                voteCount: result.vote_count.toLocaleString(),
+                url: `https://www.themoviedb.org/${result.media_type}/${result.id}`,
+            };
+        })
+        .catch((error) => {
+            console.error("Error fetching TMDb data:", error);
+            throw error; // Re-throw the error to be handled by the caller
+        });
+
+    return tmdbDataPromise;
 }
 
 async function addTmdbRatingBadge() {
-    const newRatingElement = createRatingTemplate("TMDB");
+    const newRatingElement = createRatingBadgeTemplate("TMDB");
 
     // if the template was not created, it already exists
     if (!newRatingElement) {
@@ -134,13 +128,101 @@ async function addTmdbRatingBadge() {
     updateRatingTemplate(newRatingElement, ratingData);
 }
 
+let doubanDataPromise = null;
+async function getDoubanData() {
+    const authorsMode = await GM_getValue("authorsMode", false);
+    if (!authorsMode) return;
+
+    if (doubanDataPromise) return doubanDataPromise;
+
+    if (!imdbId) {
+        throw new Error("IMDb ID not found in URL.");
+    }
+
+    const fetchFromDouban = (url, method = "GET", data = null) =>
+        new Promise((resolve, reject) => {
+            GM_xmlhttpRequest({
+                method,
+                url,
+                data,
+                headers: {
+                    "Content-Type": "application/x-www-form-urlencoded; charset=utf8",
+                },
+                onload: (response) => {
+                    if (response.status >= 200 && response.status < 400) {
+                        resolve(JSON.parse(response.responseText));
+                    } else {
+                        console.error(`Error getting ${url}:`, response.status, response.statusText, response.responseText);
+                        resolve(null);
+                    }
+                },
+                onerror: (error) => {
+                    console.error(`Error during GM_xmlhttpRequest to ${url}:`, error.statusText);
+                    reject(error);
+                },
+            });
+        });
+
+    const getDoubanInfo = async (imdbId) => {
+        const data = await fetchFromDouban(
+            `https://api.douban.com/v2/movie/imdb/${imdbId}`,
+            "POST",
+            "apikey=0ac44ae016490db2204ce0a042db2916"
+        );
+        if (data && data.alt && data.alt !== "N/A") {
+            const url = data.alt.replace("/movie/", "/subject/") + "/";
+            return { url, rating: data.rating, title: data.title };
+        }
+    };
+
+    doubanDataPromise = (async function () {
+        try {
+            const result = await getDoubanInfo(imdbId);
+            console.log("Douban: ", result);
+            if (!result) {
+                throw new Error("No data found for the provided IMDb ID.");
+            }
+
+            return {
+                source: "Douban",
+                id: result.id,
+                roundedVoteCount: parseFloat(result.rating.average).toLocaleString(),
+                voteCount: result.rating.numRaters.toLocaleString(),
+                url: result.url,
+            };
+        } catch (error) {
+            console.error("Error fetching Douban data:", error);
+            throw error;
+        }
+    })();
+
+    return doubanDataPromise;
+}
+
+async function addDoubanRatingBadge() {
+    const authorsMode = await GM_getValue("authorsMode", false);
+
+    if (authorsMode) {
+        const newRatingElement = createRatingBadgeTemplate("Douban");
+
+        // if the template was not created, it already exists
+        if (!newRatingElement) {
+            return;
+        }
+
+        const ratingData = await getDoubanData();
+
+        updateRatingTemplate(newRatingElement, ratingData);
+    }
+}
+
 async function addDdl() {
     const authorsMode = await GM_getValue("authorsMode", false);
 
     if (authorsMode) {
-        const ratingElementTheMovieDb = document.querySelector("span.rating-bar__base-button[tmdb]");
+        const lastRatingElement = document.querySelector("span.rating-bar__base-button");
 
-        if (!document.querySelector("a#ddl-button") && ratingElementTheMovieDb) {
+        if (!document.querySelector("a#ddl-button") && lastRatingElement) {
             let ddlElement = document.createElement("a");
             ddlElement.id = "ddl-button";
             ddlElement.href = `https://ddl-warez.cc/?s=${imdbId}`;
@@ -155,7 +237,7 @@ async function addDdl() {
 
             ddlElement.appendChild(imgElement);
 
-            ratingElementTheMovieDb.insertAdjacentElement("beforebegin", ddlElement);
+            lastRatingElement.insertAdjacentElement("beforebegin", ddlElement);
         }
     }
 }
@@ -234,9 +316,12 @@ function collectMetadataForClipboard() {
 // add and keep elements in header container
 function main() {
     getTmdbData();
+    getDoubanData();
 
-    const observer = new MutationObserver(() => {
-        addTmdbRatingBadge();
+    const observer = new MutationObserver(async () => {
+        await addDoubanRatingBadge();
+        await addTmdbRatingBadge();
+
         addDdl();
         // addGenresToTitle();
         collectMetadataForClipboard();
