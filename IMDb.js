@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name           IMDb with additional ratings
 // @description    Adds additional ratings (TMDB, Douban, Metacritic, MyAnimeList). These can be deactivated individually in the configuration menu. And movie info can be copied by clicking unlinked elements below the title.
-// @version        20240913
+// @version        20240914
 // @author         mykarean
 // @icon           https://icons.duckduckgo.com/ip2/imdb.com.ico
 // @match          https://*.imdb.com/title/*
@@ -36,7 +36,9 @@ function getMainTitle() {
     return getTitleElement()?.textContent;
 }
 function getOriginalTitle() {
-    return document.querySelector('[data-testid="hero__pageTitle"] ~ div')?.textContent?.match(/^.*:\ (.*)/)?.[1];
+    let originalTitle = document.querySelector('[data-testid="hero__pageTitle"] ~ div')?.textContent?.match(/^.*:\ (.*)/)?.[1];
+    // Unicode normalisation and removal of diacritical characters to improve search on other pages
+    return originalTitle?.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
 // -----------------------------------------------------------------------------------------------------
@@ -257,7 +259,10 @@ async function getTmdbData() {
             return {
                 source: "TMDB",
                 id: result.id,
-                rating: (Math.round(result.vote_average * 10) / 10)?.toLocaleString(local), // reduce digits after comma
+                rating: (Math.round(result.vote_average * 10) / 10).toLocaleString(local, {
+                    minimumFractionDigits: 1,
+                    maximumFractionDigits: 1,
+                }),
                 voteCount: result.vote_count?.toLocaleString(local),
                 url: `https://www.themoviedb.org/${result.media_type}/${result.id}`,
             };
@@ -356,7 +361,7 @@ async function getDoubanData() {
             return {
                 source: "Douban",
                 id: result.id,
-                rating: parseFloat(result.rating.average || 0)?.toLocaleString(local),
+                rating: Number(result.rating.average).toLocaleString(local, { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
                 voteCount: result.rating.numRaters?.toLocaleString(local),
                 url: result.url,
             };
@@ -471,7 +476,8 @@ async function getMetacriticData() {
                     const userRatingElement = result.querySelector(".c-siteReviewScore_user");
                     if (userRatingElement) {
                         const ratingText = userRatingElement.textContent.trim();
-                        userRating = parseFloat(ratingText || 0)?.toLocaleString(local);
+                        userRating = Number(ratingText).toLocaleString(local, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
                         // if (!isNaN(ratingText)) userRating = ratingText * 10;
 
                         if (userRating !== 0) {
@@ -686,11 +692,6 @@ async function getMyAnimeListDataByTitle() {
 
     const mainTitle = getMainTitle();
     const originalTitle = getOriginalTitle();
-    let originalTitleNormalized;
-    if (originalTitle) {
-        // Unicode normalisation and removal of diacritical characters to improve search on MyAnimeList
-        originalTitleNormalized = originalTitle?.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    }
 
     const metaData = titleElement?.parentElement?.querySelector("ul");
     const metaItems = metaData?.querySelectorAll("li");
@@ -784,9 +785,9 @@ async function getMyAnimeListDataByTitle() {
         try {
             let result = await fetchAllPages(mainTitle);
 
-            if (!result && originalTitleNormalized) {
-                console.log(`No results found for "${mainTitle}", retrying with originalTitle "${originalTitleNormalized}"...`);
-                result = await fetchAllPages(originalTitleNormalized);
+            if (!result && originalTitle) {
+                console.log(`No results found for "${mainTitle}", retrying with originalTitle "${originalTitle}"...`);
+                result = await fetchAllPages(originalTitle);
             }
 
             if (result) {
@@ -808,7 +809,7 @@ async function getMyAnimeListDataByTitle() {
         if (anime) {
             const data = {
                 source: "MyAnimeList",
-                rating: parseFloat((anime.score || 0).toFixed(1)).toLocaleString(local),
+                rating: Number(anime.score).toLocaleString(local, { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
                 voteCount: anime.scored_by?.toLocaleString(local),
                 url: anime.url,
             };
