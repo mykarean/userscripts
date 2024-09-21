@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name           IMDb with additional ratings
 // @description    Adds additional ratings (TMDB, Douban, Metacritic, MyAnimeList). These can be deactivated individually in the configuration menu. And movie info can be copied by clicking unlinked elements below the title.
-// @version        20240914
+// @version        20240921
 // @author         mykarean
 // @icon           https://icons.duckduckgo.com/ip2/imdb.com.ico
 // @match          https://*.imdb.com/title/*
@@ -104,7 +104,7 @@ function addCss() {
 }
 
 // create the initial rating template
-function createRatingBadgeTemplate(ratingSource) {
+function createRatingBadge(ratingSource) {
     const ratingElementImdb = document.querySelector('div[data-testid="hero-rating-bar__aggregate-rating"]');
 
     // ignore if the rating badge has already been created
@@ -181,7 +181,7 @@ function createRatingBadgeTemplate(ratingSource) {
 }
 
 // update the rating template with actual data
-function updateRatingTemplate(newRatingBadge, ratingData) {
+function updateRatingBadge(newRatingBadge, ratingData) {
     if (!newRatingBadge || !ratingData) return;
 
     const selectors = {
@@ -279,7 +279,7 @@ async function addTmdbRatingBadge() {
     const configured = await GM_getValue("TMDB", false);
     if (!configured) return;
 
-    const newRatingBadge = createRatingBadgeTemplate("TMDB");
+    const newRatingBadge = createRatingBadge("TMDB");
 
     // if the template for the rating badge was not created, it already exists
     if (!newRatingBadge) return;
@@ -296,7 +296,7 @@ async function addTmdbRatingBadge() {
         finalRatingData.url = defaultUrl;
     }
 
-    updateRatingTemplate(newRatingBadge, finalRatingData);
+    updateRatingBadge(newRatingBadge, finalRatingData);
 }
 
 // -----------------------------------------------------------------------------------------------------
@@ -378,7 +378,7 @@ async function addDoubanRatingBadge() {
     const configured = await GM_getValue("Douban", false);
     if (!configured) return;
 
-    const newRatingBadge = createRatingBadgeTemplate("Douban");
+    const newRatingBadge = createRatingBadge("Douban");
 
     // if the template for the rating badge was not created, it already exists
     if (!newRatingBadge) return;
@@ -395,7 +395,7 @@ async function addDoubanRatingBadge() {
         finalRatingData.url = defaultUrl;
     }
 
-    updateRatingTemplate(newRatingBadge, finalRatingData);
+    updateRatingBadge(newRatingBadge, finalRatingData);
 }
 
 // -----------------------------------------------------------------------------------------------------
@@ -545,7 +545,7 @@ async function addMetacriticRatingBadge() {
     const configured = await GM_getValue("Metacritic", false);
     if (!configured) return;
 
-    const newRatingBadge = createRatingBadgeTemplate("Metacritic");
+    const newRatingBadge = createRatingBadge("Metacritic");
 
     // if the template for the rating badge was not created, it already exists
     if (!newRatingBadge) return;
@@ -562,7 +562,7 @@ async function addMetacriticRatingBadge() {
         finalRatingData.url = defaultUrl;
     }
 
-    updateRatingTemplate(newRatingBadge, finalRatingData);
+    updateRatingBadge(newRatingBadge, finalRatingData);
 }
 
 // -----------------------------------------------------------------------------------------------------
@@ -570,17 +570,18 @@ async function addMetacriticRatingBadge() {
 // -----------------------------------------------------------------------------------------------------
 // wikidata solution inspired by IMDb Scout Mod
 
-let myAnimeListDataPromise = null;
+let myAnimeListDataByImdbIdPromise = null;
 async function getMyAnimeListDataByImdbId() {
+    // to execute only once
+    if (myAnimeListDataByImdbIdPromise) return myAnimeListDataByImdbIdPromise;
+
     // only if genre is anime
     const genreAnime = document.querySelector(".ipc-chip-list__scroller")?.textContent.includes("Anime");
-    if (!genreAnime) return;
+    if (!genreAnime) return Promise.resolve(null);
 
     // only if enabled in settings
     const configured = await GM_getValue("MyAnimeList", false);
-    if (!configured) return;
-
-    if (myAnimeListDataPromise) return myAnimeListDataPromise;
+    if (!configured) return Promise.resolve(null);
 
     function getAnimeID() {
         const url = `https://query.wikidata.org/sparql?format=json&query=SELECT * WHERE {?s wdt:P345 "${imdbId}". OPTIONAL {?s wdt:P4086 ?MyAnimeList_ID.} OPTIONAL {?s wdt:P8729 ?AniList_ID.}}`;
@@ -595,29 +596,33 @@ async function getMyAnimeListDataByImdbId() {
                     const result = JSON.parse(response.responseText);
                     let myAnimeListId = "";
                     let aniListId = "";
+
                     if (result.results.bindings[0] !== undefined) {
                         if (result.results.bindings[0].MyAnimeList_ID !== undefined) {
                             myAnimeListId = result.results.bindings[0].MyAnimeList_ID.value;
                         } else {
-                            console.log("getAnimeID: No MyAnimeList_ID found on wikidata.org");
+                            console.log("getMyAnimeListDataByImdbId: No MyAnimeList_ID found on wikidata.org");
                         }
                         if (result.results.bindings[0].AniList_ID !== undefined) {
                             aniListId = result.results.bindings[0].AniList_ID.value;
                         }
-                        console.log("getAnimeID: ", result.results);
+                        // console.log("getMyAnimeListDataByImdbId: ", result.results);
+                        resolve([myAnimeListId, aniListId]);
+                    } else {
+                        console.log("getMyAnimeListDataByImdbId: No results found on wikidata.org");
                         resolve([myAnimeListId, aniListId]);
                     }
                 },
                 onerror: function () {
-                    console.log("getAnimeID: Request Error.");
+                    console.log("getMyAnimeListDataByImdbId: Request Error.");
                     reject("Request Error");
                 },
                 onabort: function () {
-                    console.log("getAnimeID: Request Abort.");
+                    console.log("getMyAnimeListDataByImdbId: Request Abort.");
                     reject("Request Abort");
                 },
                 ontimeout: function () {
-                    console.log("getAnimeID: Request Timeout.");
+                    console.log("getMyAnimeListDataByImdbId: Request Timeout.");
                     reject("Request Timeout");
                 },
             });
@@ -637,11 +642,11 @@ async function getMyAnimeListDataByImdbId() {
                         const result = JSON.parse(response.responseText);
                         const rating = result.data.score;
                         if (!isNaN(rating) && rating > 0) {
-                            console.log("fetchMyAnimeListData: ", result.data.mal_id, result);
+                            console.log("getMyAnimeListDataByImdbId: ", result.data.mal_id, result);
 
                             resolve({
                                 source: "MyAnimeList",
-                                rating: parseFloat((rating || 0).toFixed(1)).toLocaleString(local),
+                                rating: Number(rating).toLocaleString(local, { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
                                 voteCount: result.data.scored_by?.toLocaleString(local),
                                 url: result.data.url,
                             });
@@ -669,26 +674,32 @@ async function getMyAnimeListDataByImdbId() {
         });
     }
 
-    myAnimeListDataPromise = (async () => {
+    myAnimeListDataByImdbIdPromise = (async () => {
         const id = await getAnimeID();
         const myAnimeListId = id[0];
         const aniListId = id[1];
 
         if (myAnimeListId !== "") {
             return fetchMyAnimeListData(myAnimeListId);
+        } else {
+            return null;
         }
     })();
 
-    return 0;
+    return myAnimeListDataByImdbIdPromise;
 }
 
+let myAnimeListDataByTitlePromise = null;
 async function getMyAnimeListDataByTitle() {
+    // to execute only once
+    if (myAnimeListDataByTitlePromise) return myAnimeListDataByTitlePromise;
+
     const titleElement = getTitleElement();
-    if (!titleElement) return;
+    if (!titleElement) return Promise.resolve(null);
 
     // only if genre is anime
     const genreAnime = document.querySelector(".ipc-chip-list__scroller")?.textContent.includes("Anime");
-    if (!genreAnime) return;
+    if (!genreAnime) return Promise.resolve(null);
 
     const mainTitle = getMainTitle();
     const originalTitle = getOriginalTitle();
@@ -786,7 +797,9 @@ async function getMyAnimeListDataByTitle() {
             let result = await fetchAllPages(mainTitle);
 
             if (!result && originalTitle) {
-                console.log(`No results found for "${mainTitle}", retrying with originalTitle "${originalTitle}"...`);
+                console.log(
+                    `getMyAnimeListDataByTitle: No results found for "${mainTitle}", retrying with originalTitle "${originalTitle}"`
+                );
                 result = await fetchAllPages(originalTitle);
             }
 
@@ -803,7 +816,7 @@ async function getMyAnimeListDataByTitle() {
         }
     }
 
-    myAnimeListDataPromise = (async () => {
+    myAnimeListDataByTitlePromise = (async () => {
         const anime = await getAnimeData();
 
         if (anime) {
@@ -814,7 +827,7 @@ async function getMyAnimeListDataByTitle() {
                 url: anime.url,
             };
 
-            // console.log("myAnimeListDataPromise: ", anime);
+            // console.log("myAnimeListDataByTitlePromise: ", data);
 
             return data;
         } else {
@@ -822,6 +835,8 @@ async function getMyAnimeListDataByTitle() {
             return null;
         }
     })();
+
+    return myAnimeListDataByTitlePromise;
 }
 
 async function addMyAnimeListRatingBadge() {
@@ -833,13 +848,13 @@ async function addMyAnimeListRatingBadge() {
     const configured = await GM_getValue("MyAnimeList", false);
     if (!configured) return;
 
-    const newRatingBadge = createRatingBadgeTemplate("MyAnimeList");
+    const newRatingBadge = createRatingBadge("MyAnimeList");
 
     // if the template for the rating badge was not created, it already exists
     if (!newRatingBadge) return;
 
     let ratingData = await getMyAnimeListDataByImdbId();
-    if (ratingData === 0) {
+    if (ratingData === null) {
         ratingData = await getMyAnimeListDataByTitle();
     }
 
@@ -849,11 +864,11 @@ async function addMyAnimeListRatingBadge() {
     // Check if ratingData or ratingData.url is undefined and provide a default value
     if (!ratingData?.url) {
         const searchTitle = getOriginalTitle() ?? getMainTitle();
-        const defaultUrl = `https://myanimelist.net/anime.php?q=${searchTitle}`; // Define your default URL here
+        const defaultUrl = `https://myanimelist.net/anime.php?q=${searchTitle}`;
         finalRatingData.url = defaultUrl;
     }
 
-    updateRatingTemplate(newRatingBadge, finalRatingData);
+    updateRatingBadge(newRatingBadge, finalRatingData);
 }
 
 // -----------------------------------------------------------------------------------------------------
@@ -865,15 +880,45 @@ async function addDdl() {
     const targetElement = document.querySelector("[data-testid=hero__pageTitle]");
 
     if (!document.querySelector("a#ddl-button") && targetElement) {
+        targetElement.parentElement.style.minWidth = "340px";
+
         let ddlElement = document.createElement("a");
         ddlElement.id = "ddl-button";
         ddlElement.href = `https://ddl-warez.cc/?s=${imdbId}`;
         ddlElement.style.float = "right";
+        ddlElement.style.height = "34px";
+        ddlElement.style.display = "flex";
+        ddlElement.style.alignItems = "center";
 
         let imgElement = document.createElement("img");
         imgElement.src = "https://ddl-warez.cc/wp-content/uploads/logo.png";
-        imgElement.style.height = "48px";
-        imgElement.style.aspectRatio = "1/1";
+        imgElement.style.height = "38px";
+
+        ddlElement.appendChild(imgElement);
+
+        targetElement.insertAdjacentElement("afterend", ddlElement);
+    }
+}
+
+async function addBt4g() {
+    const authorsMode = await GM_getValue("authorsMode", false);
+    if (!authorsMode) return;
+
+    const targetElement = document.querySelector("[data-testid=hero__pageTitle]");
+
+    if (!document.querySelector("a#bt4g") && targetElement) {
+        targetElement.parentElement.style.minWidth = "340px";
+
+        let ddlElement = document.createElement("a");
+        ddlElement.id = "bt4g";
+        ddlElement.href = `https://bt4gprx.com/search?q=${getMainTitle()}&orderby=size`;
+        ddlElement.style.float = "right";
+
+        let imgElement = document.createElement("img");
+        imgElement.src =
+            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAAMFBMVEUAAAD/////PwA/v/8KIDUifaxN2//Cw8L5ywC8hwBuQwA+HQDSLAcPBAJvb2////9VWbprAAAAEHRSTlP///////////////////8A4CNdGQAAAAlwSFlzAAALEwAACxMBAJqcGAAABr5pVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+IDx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IkFkb2JlIFhNUCBDb3JlIDYuMC1jMDA1IDc5LjE2NDU5MCwgMjAyMC8xMi8wOS0xMTo1Nzo0NCAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvIiB4bWxuczpkYz0iaHR0cDovL3B1cmwub3JnL2RjL2VsZW1lbnRzLzEuMS8iIHhtbG5zOnBob3Rvc2hvcD0iaHR0cDovL25zLmFkb2JlLmNvbS9waG90b3Nob3AvMS4wLyIgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iIHhtbG5zOnN0RXZ0PSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VFdmVudCMiIHhtcDpDcmVhdG9yVG9vbD0iQWRvYmUgUGhvdG9zaG9wIDIyLjEgKFdpbmRvd3MpIiB4bXA6Q3JlYXRlRGF0ZT0iMjAyNC0wNi0yMVQwODoyMTo0NCswMjowMCIgeG1wOk1vZGlmeURhdGU9IjIwMjQtMDYtMjFUMTI6MDA6MzQrMDI6MDAiIHhtcDpNZXRhZGF0YURhdGU9IjIwMjQtMDYtMjFUMTI6MDA6MzQrMDI6MDAiIGRjOmZvcm1hdD0iaW1hZ2UvcG5nIiBwaG90b3Nob3A6Q29sb3JNb2RlPSIyIiBwaG90b3Nob3A6SUNDUHJvZmlsZT0ic1JHQiBJRUM2MTk2Ni0yLjEiIHhtcE1NOkluc3RhbmNlSUQ9InhtcC5paWQ6ODZhZDM2M2ItOWY4Ny0xNzQ3LWE2MDQtOTBmODg4MzA3MmU5IiB4bXBNTTpEb2N1bWVudElEPSJhZG9iZTpkb2NpZDpwaG90b3Nob3A6ODVkNmE1ODktZmZhZC1kYTRmLWE1NTktOTc5ODAxNmRkMDJjIiB4bXBNTTpPcmlnaW5hbERvY3VtZW50SUQ9InhtcC5kaWQ6YjAwNjgyYTQtMGQ2NS01YjRlLTg3MTMtMGVmYzNlN2U4ODI0Ij4gPHhtcE1NOkhpc3Rvcnk+IDxyZGY6U2VxPiA8cmRmOmxpIHN0RXZ0OmFjdGlvbj0iY3JlYXRlZCIgc3RFdnQ6aW5zdGFuY2VJRD0ieG1wLmlpZDpiMDA2ODJhNC0wZDY1LTViNGUtODcxMy0wZWZjM2U3ZTg4MjQiIHN0RXZ0OndoZW49IjIwMjQtMDYtMjFUMDg6MjE6NDQrMDI6MDAiIHN0RXZ0OnNvZnR3YXJlQWdlbnQ9IkFkb2JlIFBob3Rvc2hvcCAyMi4xIChXaW5kb3dzKSIvPiA8cmRmOmxpIHN0RXZ0OmFjdGlvbj0ic2F2ZWQiIHN0RXZ0Omluc3RhbmNlSUQ9InhtcC5paWQ6OTNhYTg2MjktN2RhNy0wOTQ4LWI0Y2UtODQ1YjM2ODA4ZmQzIiBzdEV2dDp3aGVuPSIyMDI0LTA2LTIxVDA4OjUzOjAzKzAyOjAwIiBzdEV2dDpzb2Z0d2FyZUFnZW50PSJBZG9iZSBQaG90b3Nob3AgMjIuMSAoV2luZG93cykiIHN0RXZ0OmNoYW5nZWQ9Ii8iLz4gPHJkZjpsaSBzdEV2dDphY3Rpb249InNhdmVkIiBzdEV2dDppbnN0YW5jZUlEPSJ4bXAuaWlkOjg2YWQzNjNiLTlmODctMTc0Ny1hNjA0LTkwZjg4ODMwNzJlOSIgc3RFdnQ6d2hlbj0iMjAyNC0wNi0yMVQxMjowMDozNCswMjowMCIgc3RFdnQ6c29mdHdhcmVBZ2VudD0iQWRvYmUgUGhvdG9zaG9wIDIyLjEgKFdpbmRvd3MpIiBzdEV2dDpjaGFuZ2VkPSIvIi8+IDwvcmRmOlNlcT4gPC94bXBNTTpIaXN0b3J5PiA8L3JkZjpEZXNjcmlwdGlvbj4gPC9yZGY6UkRGPiA8L3g6eG1wbWV0YT4gPD94cGFja2V0IGVuZD0iciI/PocnnoQAAAGsSURBVFjD7ZdJcsQgDEV/wNACQXz/22YRNzOSU92VRSpaUv4PDWAknFtDY8JXuliG4K58h4CmziwzoO0eg+wFNOdDlAOBoo+kpAJK7igo2YSsjxQB5JrSiYBJz23aiZhDyHNJZkDdNNbPIhFRiYJzjFMUmPznUOMmIiKKBRd4ysMMQN3y24FSh0CEHaCv/FV7Jgqx+sOhr2kL6DLP4AsQMxDo6XZkLI41lhXk3AS0WBwBEGx9kioBip6JIRJGwGe19jI2y1kE5I9ij+tYAQAedf2YABABLAGgAy6HJQBEAGQA3g5AMk9L7bLzxRQPtgD7tBGA1wD4B/wD/grg5cv0FwDn5o9k8g3AKQGaJ+mw1TABOkKsgJQXDninPG1sFoQmABWQTUvgDOBo9NYfC8C5SYIxJiVnbau3q+e9I7DpzTfywYFNhzK4YDu93bQ45y4LI+DYNFn7IDpAV4J9n9iehQ4wlXDd6g6nSdEvmu0+igLwa/2u3S+3MhX5sR4YtgMHXwjrvffWHTcGjhGROaWUnHNuL9eHrqxNj7g7dN4c+1TCb4y+7xi+fzL+fwG9j0ZciTgBKAAAAABJRU5ErkJggg==";
+        imgElement.style.height = "33px";
+        // imgElement.style.aspectRatio = "1/1";
 
         ddlElement.appendChild(imgElement);
 
@@ -1063,6 +1108,7 @@ async function main() {
             await addTmdbRatingBadge();
 
             addDdl();
+            addBt4g();
             // addGenresToTitle();
             collectMetadataForClipboard();
         });
