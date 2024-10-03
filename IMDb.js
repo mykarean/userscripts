@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name           IMDb with additional ratings
-// @description    Adds additional ratings (TMDB, Douban, Metacritic, MyAnimeList). These can be deactivated individually in the configuration menu. And movie info can be copied by clicking unlinked elements below the title.
-// @version        20240922
+// @description    Adds additional ratings (TMDB, Douban, Metacritic, MyAnimeList). These can be deactivated individually in the configuration menu, which can be accessed via Tampermonkeys extension menu. And movie metadata can be copied by clicking unlinked elements below the title.
+// @version        20240929
 // @author         mykarean
 // @icon           https://icons.duckduckgo.com/ip2/imdb.com.ico
 // @match          https://*.imdb.com/title/*
@@ -21,9 +21,7 @@
 // Config/Requirements
 // -----------------------------------------------------------------------------------------------------
 
-GM_registerMenuCommand("Configuration", openConfiguration, "c");
-
-const ratingSources = ["TMDB", "Douban", "Metacritic", "MyAnimeList"];
+const ratingSourceOptions = ["TMDB", "Douban", "Metacritic", "MyAnimeList"];
 const imdbId = window.location.pathname.match(/title\/(tt\d+)\//)[1];
 const USER_AGENT = "Mozilla/5.0 (x64; rv) Gecko Firefox";
 const undefinedValue = "X";
@@ -40,6 +38,8 @@ function getOriginalTitle() {
     // Unicode normalisation and removal of diacritical characters to improve search on other pages
     return originalTitle?.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
+
+GM_registerMenuCommand("Configuration", configurationMenu, "c");
 
 // -----------------------------------------------------------------------------------------------------
 // General Functions
@@ -224,7 +224,7 @@ function updateRatingBadge(newRatingBadge, ratingData) {
 
 let tmdbDataPromise = null;
 async function getTmdbData() {
-    const configured = await GM_getValue("TMDB", false);
+    const configured = await GM_getValue("TMDB", true);
     if (!configured) return;
 
     if (tmdbDataPromise) return tmdbDataPromise;
@@ -276,7 +276,7 @@ async function getTmdbData() {
 }
 
 async function addTmdbRatingBadge() {
-    const configured = await GM_getValue("TMDB", false);
+    const configured = await GM_getValue("TMDB", true);
     if (!configured) return;
 
     const newRatingBadge = createRatingBadge("TMDB");
@@ -305,7 +305,7 @@ async function addTmdbRatingBadge() {
 
 let doubanDataPromise = null;
 async function getDoubanData() {
-    const configured = await GM_getValue("Douban", false);
+    const configured = await GM_getValue("Douban", true);
     if (!configured) return;
 
     if (doubanDataPromise) return doubanDataPromise;
@@ -375,7 +375,7 @@ async function getDoubanData() {
 }
 
 async function addDoubanRatingBadge() {
-    const configured = await GM_getValue("Douban", false);
+    const configured = await GM_getValue("Douban", true);
     if (!configured) return;
 
     const newRatingBadge = createRatingBadge("Douban");
@@ -405,7 +405,7 @@ async function addDoubanRatingBadge() {
 
 let metacriticDataPromise = null;
 async function getMetacriticData() {
-    const configured = await GM_getValue("Metacritic", false);
+    const configured = await GM_getValue("Metacritic", true);
     if (!configured) return;
 
     if (metacriticDataPromise) return metacriticDataPromise;
@@ -542,7 +542,7 @@ async function getMetacriticData() {
 }
 
 async function addMetacriticRatingBadge() {
-    const configured = await GM_getValue("Metacritic", false);
+    const configured = await GM_getValue("Metacritic", true);
     if (!configured) return;
 
     const newRatingBadge = createRatingBadge("Metacritic");
@@ -580,7 +580,7 @@ async function getMyAnimeListDataByImdbId() {
     if (!genreAnime) return Promise.resolve(null);
 
     // only if enabled in settings
-    const configured = await GM_getValue("MyAnimeList", false);
+    const configured = await GM_getValue("MyAnimeList", true);
     if (!configured) return Promise.resolve(null);
 
     function getAnimeID() {
@@ -868,7 +868,7 @@ async function addMyAnimeListRatingBadge() {
     if (!genreAnime) return;
 
     // only if enabled in settings
-    const configured = await GM_getValue("MyAnimeList", false);
+    const configured = await GM_getValue("MyAnimeList", true);
     if (!configured) return;
 
     const newRatingBadge = createRatingBadge("MyAnimeList");
@@ -993,7 +993,7 @@ function collectMetadataForClipboard() {
 }
 
 // Configuration Modal
-function openConfiguration() {
+function configurationMenu() {
     GM_addStyle(`
     .modal-overlay {
         position: fixed;
@@ -1001,7 +1001,7 @@ function openConfiguration() {
         left: 0;
         width: 100vw;
         height: 100vh;
-        background-color: rgba(0, 0, 0, 0.5);
+        background-color: rgba(0, 0, 0, 0.6) !important;
         z-index: 9998;
         transition: background-color 0.5s ease;
     }
@@ -1061,13 +1061,13 @@ function openConfiguration() {
     modal.appendChild(title);
 
     // Add checkboxes
-    ratingSources.forEach((ratingSource) => {
+    ratingSourceOptions.forEach((ratingSource) => {
         const label = document.createElement("label");
         label.className = "checkbox-label";
 
         const checkbox = document.createElement("input");
         checkbox.type = "checkbox";
-        checkbox.checked = GM_getValue(ratingSource, false);
+        checkbox.checked = GM_getValue(ratingSource, true);
 
         checkbox.addEventListener("change", () => {
             GM_setValue(ratingSource, checkbox.checked);
@@ -1112,16 +1112,6 @@ function openConfiguration() {
 
 // add and keep elements in header container
 async function main() {
-    // set default configuration
-    ratingSources.forEach((badge) => {
-        // Query default value (if does not exist, 'null' is returned)
-        const existingValue = GM_getValue(badge, null);
-        if (existingValue === null) {
-            // Value does not exist, set default value to true
-            GM_setValue(badge, true);
-        }
-    });
-
     // ignore episode view
     if (!document.title.includes('"')) {
         addCss();
