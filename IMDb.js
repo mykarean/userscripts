@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            IMDb with additional ratings
 // @description     Adds additional ratings (TMDB, Douban, Metacritic, MyAnimeList). These can be deactivated individually in the configuration menu, which can be accessed via Tampermonkeys extension menu. And movie metadata can be copied by clicking unlinked elements below the title.
-// @version         20240930
+// @version         20241003
 // @author          mykarean
 // @icon            https://icons.duckduckgo.com/ip2/imdb.com.ico
 // @match           https://*.imdb.com/title/*
@@ -113,6 +113,14 @@ function createRatingBadge(ratingSource) {
 
     // ignore if the rating badge has already been created
     if (!ratingElementImdb || document.querySelector(`span.rating-bar__base-button[${ratingSource}]`)) return null;
+    
+    function updateRatingElement(element, rating, voteCount) {
+        let ratingElement = element.querySelector("div[data-testid=hero-rating-bar__aggregate-rating__score]");
+        if (ratingElement) {
+            ratingElement.querySelector("span").innerText = rating;
+            ratingElement.nextSibling.nextSibling.innerText = voteCount;
+        }
+    }
 
     let clonedRatingBadge = ratingElementImdb.cloneNode(true);
     clonedRatingBadge.setAttribute(ratingSource, "");
@@ -120,16 +128,7 @@ function createRatingBadge(ratingSource) {
 
     // disable link per default
     clonedRatingBadge.querySelector("a").removeAttribute("href");
-    // clonedRatingBadge.querySelector("a").classList.add("disable-anchor");
-
-    const updateRatingElement = (element, rating, voteCount) => {
-        let imdbRatingElement = element.querySelector("div[data-testid=hero-rating-bar__aggregate-rating__score]");
-        if (imdbRatingElement) {
-            imdbRatingElement.querySelector("span").innerText = rating;
-            imdbRatingElement.nextSibling.nextSibling.innerText = voteCount;
-        }
-    };
-
+    
     if (ratingSource === "Metacritic") {
         const criticRatingElement = clonedRatingBadge.querySelector(
             "div[data-testid=hero-rating-bar__aggregate-rating__score]"
@@ -471,7 +470,7 @@ async function getMetacriticData() {
                             let criticVoteCountText = result
                                 .querySelector(".c-siteReviewScore")
                                 .parentElement.parentElement.parentElement.querySelector("a > span")?.textContent;
-                            criticVoteCount = criticVoteCountText.match(/\d+/)[0];
+                            criticVoteCount = criticVoteCountText.match(/\d{1,3}(?:,\d{3})*/);
                         } else {
                             criticVoteCount = 0;
                         }
@@ -488,7 +487,11 @@ async function getMetacriticData() {
                             let userVoteCountText = result
                                 .querySelector(".c-siteReviewScore_user")
                                 .parentElement.parentElement.parentElement.querySelector("a > span")?.textContent;
-                            userVoteCount = userVoteCountText.match(/\d+/)[0];
+                            userVoteCount = Number(userVoteCountText.match(/\d{1,3}(?:,\d{3})*/)[0].replace(/,/g, "")).toLocaleString(
+                                local
+                            );
+
+                            console.log("userVoteCount: ", userVoteCount);
                         } else {
                             userVoteCount = 0;
                         }
