@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            IMDb with additional ratings
-// @description     Adds additional ratings (TMDB, Douban, Metacritic, RottenTomatoes, MyAnimeList). These can be activated or deactivated individually in the extension's configuration menu, which is accessible via the Tampermonkey menu. The extension also allows you to copy movie metadata by simply clicking on unlinked elements below the movie title.
-// @version         20241004
+// @description     Adds additional ratings (TMDB, Douban, Metacritic, Rotten Tomatoes, MyAnimeList). These can be activated or deactivated individually in the extension's configuration menu, which is accessible via the Tampermonkey menu. The extension also allows you to copy movie metadata by simply clicking on unlinked elements below the movie title.
+// @version         20241004a
 // @author          mykarean
 // @icon            https://icons.duckduckgo.com/ip2/imdb.com.ico
 // @match           https://*.imdb.com/title/*
@@ -55,16 +55,16 @@ function addCss() {
     if (!document.getElementById("custom-css-style")) {
         GM_addStyle(`
             /* all Badges */
-            [data-testid="hero-rating-bar__aggregate-rating"],
-            .rating-bar__base-button > .ipc-btn {
-                padding: 4px 3px;
-                border-radius: 5px !important;
-            }
             .rating-bar__base-button {
                 margin-right: 0 !important;
             }
 
             /* added Badges */
+            span[data-testid="hero-rating-bar__aggregate-rating"],
+            .rating-bar__base-button > .ipc-btn {
+                padding: 4px 3px;
+                border-radius: 5px !important;
+            }
             span[data-testid=hero-rating-bar__aggregate-rating] {
                 margin: 0 3px;
                 background-color: rgba(255, 255, 255, 0.08);
@@ -375,12 +375,20 @@ async function getDoubanData() {
                 throw new Error("No data found for the provided IMDb ID.");
             }
 
+            let ratingRaw = result.rating.average;
+            let rating =
+                !isNaN(ratingRaw) && ratingRaw !== ""
+                    ? Number(ratingRaw).toLocaleString(local, { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+                    : 0;
+            let voteCountRaw = result.rating.numRaters;
+            let voteCount = !isNaN(voteCountRaw) && voteCountRaw !== 0 ? Number(voteCountRaw).toLocaleString(local) : 0;
+
             console.log("Douban: ", result);
             return {
                 source: "Douban",
                 id: result.id,
-                rating: Number(result.rating.average).toLocaleString(local, { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
-                voteCount: result.rating.numRaters?.toLocaleString(local),
+                rating: rating,
+                voteCount: voteCount,
                 url: result.url,
             };
         } catch (error) {
@@ -471,68 +479,59 @@ async function getMetacriticData() {
                     const parser = new DOMParser();
                     const result = parser.parseFromString(response.responseText, "text/html");
 
-                    let criticRating;
-                    let userRating;
-                    let criticVoteCount;
-                    let userVoteCount;
+                    const parseRating = (ratingElement, voteSelector, divideByTen = false) => {
+                        if (!ratingElement) return { rating: 0, voteCount: 0 };
 
-                    const criticRatingElement = result.querySelector(".c-siteReviewScore");
-                    if (criticRatingElement) {
-                        const ratingText = criticRatingElement.textContent.trim();
-                        criticRating = !isNaN(ratingText)
-                            ? (Number(ratingText) / 10).toLocaleString(local, { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+                        let ratingText = ratingElement.textContent.trim();
+                        let rating = !isNaN(ratingText) ? Number(ratingText) : 0;
+
+                        if (divideByTen) {
+                            rating = rating / 10;
+                        }
+
+                        // no fractions for 10 and 0
+                        if (rating !== 10 && rating !== 0) {
+                            rating = rating.toLocaleString(local, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+                        }
+
+                        const voteCountText = result.querySelector(voteSelector)?.textContent;
+                        const voteCount = voteCountText
+                            ? Number(voteCountText.match(/\d{1,3}(?:,\d{3})*/)[0].replace(/,/g, "")).toLocaleString(local)
                             : 0;
 
-                        if (criticRating !== 0) {
-                            let criticVoteCountText = result
-                                .querySelector(".c-siteReviewScore")
-                                .parentElement.parentElement.parentElement.querySelector("a > span")?.textContent;
-                            criticVoteCount = criticVoteCountText.match(/\d{1,3}(?:,\d{3})*/);
-                        } else {
-                            criticVoteCount = 0;
-                        }
-                    }
+                        return { rating, voteCount };
+                    };
 
-                    const userRatingElement = result.querySelector(".c-siteReviewScore_user");
-                    if (userRatingElement) {
-                        const ratingText = userRatingElement.textContent.trim();
-                        userRating = Number(ratingText).toLocaleString(local, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-
-                        if (userRating !== 0) {
-                            let userVoteCountText = result
-                                .querySelector(".c-siteReviewScore_user")
-                                .parentElement.parentElement.parentElement.querySelector("a > span")?.textContent;
-                            userVoteCount = Number(userVoteCountText.match(/\d{1,3}(?:,\d{3})*/)[0].replace(/,/g, "")).toLocaleString(
-                                local
-                            );
-                        } else {
-                            userVoteCount = 0;
-                        }
-                    }
-
-                    console.log(
-                        "Critic rating: " +
-                            criticRating +
-                            ", User rating: " +
-                            userRating +
-                            ", criticVoteCount: " +
-                            criticVoteCount +
-                            ", userVoteCount: " +
-                            userVoteCount +
-                            ", Url: " +
-                            url
+                    const criticRatingElement = result.querySelector(
+                        ".c-siteReviewScore_background-critic_medium .c-siteReviewScore span"
+                    );
+                    const { rating: criticRating, voteCount: criticVoteCount } = parseRating(
+                        criticRatingElement,
+                        '.c-productScoreInfo_scoreContent a[href*="critic-reviews"] span',
+                        true
                     );
 
-                    // Resolve the promise with the ratings and URL
+                    const userRatingElement = result.querySelector(".c-siteReviewScore_background-user .c-siteReviewScore span");
+                    const { rating: userRating, voteCount: userVoteCount } = parseRating(
+                        userRatingElement,
+                        '.c-productScoreInfo_scoreContent a[href*="user-reviews"] span',
+                        false
+                    );
+
+                    console.log(
+                        `Critic rating: ${criticRating}, User rating: ${userRating}, Critic vote count: ${criticVoteCount}, User vote count: ${userVoteCount}, URL: ${url}`
+                    );
+
                     resolve({
                         source: "Metacritic",
-                        criticRating: criticRating,
-                        userRating: userRating,
-                        criticVoteCount: criticVoteCount,
-                        userVoteCount: userVoteCount,
-                        url: url,
+                        criticRating,
+                        userRating,
+                        criticVoteCount,
+                        userVoteCount,
+                        url,
                     });
                 },
+
                 onerror: function () {
                     console.log("getMetacriticRatings: Request Error.");
                     reject("Request Error");
@@ -649,52 +648,27 @@ async function getRottenTomatoesData() {
                     const parser = new DOMParser();
                     const result = parser.parseFromString(response.responseText, "text/html");
 
-                    let criticRating;
-                    let userRating;
-                    let criticVoteCount;
-                    let userVoteCount;
-
                     const ratingDataElement = result.getElementById("media-scorecard-json");
                     const ratingData = JSON.parse(ratingDataElement.textContent);
 
-                    let criticRatingRaw = ratingData.criticsScore.score;
-                    criticRating = !isNaN(criticRatingRaw) ? Number(criticRatingRaw) / 10 : 0;
+                    const formatRating = (rawRating) => {
+                        const rating = !isNaN(rawRating) ? Number(rawRating) / 10 : 0;
+                        // no fractions for 10 and 0
+                        return rating === 10 || rating === 0
+                            ? rating
+                            : rating.toLocaleString(local, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+                    };
 
-                    // no fractions for 10 and 0
-                    if (criticRating !== 10 && criticRating !== 0) {
-                        criticRating = criticRating.toLocaleString(local, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-                    }
+                    const formatVoteCount = (rawCount) => {
+                        if (!rawCount) return 0;
+                        const formattedCount = Number(String(rawCount).replace(/[^\d]/g, "")).toLocaleString(local);
+                        return String(rawCount).includes("+") ? `${formattedCount}+` : formattedCount;
+                    };
 
-                    if (criticRating && criticRating !== 0) {
-                        criticVoteCount = Number(ratingData.criticsScore.ratingCount).toLocaleString(local);
-                    } else {
-                        criticVoteCount = 0;
-                    }
-
-                    let userRatingRaw = ratingData.audienceScore.score;
-                    userRating = !isNaN(userRatingRaw)
-                        ? (Number(userRatingRaw) / 10).toLocaleString(local, { minimumFractionDigits: 1, maximumFractionDigits: 1 })
-                        : 0;
-
-                    // no fractions for 10 and 0
-                    if (userRating !== 10 && userRating !== 0) {
-                        userRating = userRating.toLocaleString(local, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-                    }
-
-                    if (userRating && userRating !== 0) {
-                        let userVoteCountRaw = ratingData.audienceScore.bandedRatingCount;
-                        let userVoteCountFormated = Number(
-                            userVoteCountRaw.replace(/\+\ Ratings/g, "").replace(/,/g, "")
-                        ).toLocaleString(local);
-
-                        if (userVoteCountRaw.includes("+")) {
-                            userVoteCount = `${userVoteCountFormated}+`;
-                        } else {
-                            userVoteCount = `${userVoteCountFormated}`;
-                        }
-                    } else {
-                        userVoteCount = 0;
-                    }
+                    const criticRating = formatRating(ratingData.criticsScore.score);
+                    const userRating = formatRating(ratingData.audienceScore.score);
+                    const criticVoteCount = criticRating !== 0 ? formatVoteCount(ratingData.criticsScore.ratingCount) : 0;
+                    const userVoteCount = userRating !== 0 ? formatVoteCount(ratingData.audienceScore.bandedRatingCount) : 0;
 
                     console.log(
                         "Critic rating: " +
@@ -709,14 +683,13 @@ async function getRottenTomatoesData() {
                             url
                     );
 
-                    // Resolve the promise with the ratings and URL
                     resolve({
                         source: "RottenTomatoes",
-                        criticRating: criticRating,
-                        userRating: userRating,
-                        criticVoteCount: criticVoteCount,
-                        userVoteCount: userVoteCount,
-                        url: url,
+                        criticRating,
+                        userRating,
+                        criticVoteCount,
+                        userVoteCount,
+                        url,
                     });
                 },
                 onerror: function () {
@@ -919,6 +892,7 @@ async function getMyAnimeListDataByTitle() {
     const mainTitle = getMainTitle();
     const originalTitle = getOriginalTitle();
 
+    // get the year of release
     const metaData = titleElement?.parentElement?.querySelector("ul");
     const metaItems = metaData?.querySelectorAll("li");
     // If the text content type is an integer, it is a tv show, otherwise it is a movie.
