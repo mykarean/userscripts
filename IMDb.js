@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            IMDb with additional ratings
 // @description     Adds additional ratings (TMDB, Douban, Metacritic, Rotten Tomatoes, MyAnimeList). These can be activated or deactivated individually in the extension's configuration menu, which is accessible via the Tampermonkey menu. The extension also allows you to copy movie metadata by simply clicking on unlinked elements below the movie title.
-// @version         20241004a
+// @version         20241005
 // @author          mykarean
 // @icon            https://icons.duckduckgo.com/ip2/imdb.com.ico
 // @match           https://*.imdb.com/title/*
@@ -51,7 +51,7 @@ GM_registerMenuCommand("Configuration", configurationMenu, "c");
 // General Functions
 // -----------------------------------------------------------------------------------------------------
 
-function addCss() {
+async function addCss() {
     if (!document.getElementById("custom-css-style")) {
         GM_addStyle(`
             /* all Badges */
@@ -120,6 +120,26 @@ function addCss() {
     const imdbRatingName = document.querySelector('div[data-testid="hero-rating-bar__aggregate-rating"] > div');
     if (imdbRatingName) {
         imdbRatingName.textContent = "IMDb";
+    }
+
+    const authorsMode = await GM_getValue("authorsMode2", false);
+    if (authorsMode) {
+        if (!document.getElementById("authors-custom-css-style")) {
+            GM_addStyle(`
+                /* remove star */
+                div[data-testid=hero-rating-bar__aggregate-rating] .ipc-btn__text > div > div:first-child {
+                    display: none;
+                }
+                /* center rating */
+                div[data-testid=hero-rating-bar__aggregate-rating] div[data-testid=hero-rating-bar__aggregate-rating__score] {
+                    align-self: center;
+                }
+                /* remove /10 */
+                div[data-testid=hero-rating-bar__aggregate-rating] div[data-testid=hero-rating-bar__aggregate-rating__score] > span:nth-child(2) {
+                    display: none;
+                }
+            `).setAttribute("id", "authors-custom-css-style");
+        }
     }
 }
 
@@ -195,6 +215,9 @@ function createRatingBadge(ratingSource) {
     ratingElement.innerHTML = clonedRatingBadge.innerHTML;
 
     ratingElementImdb.insertAdjacentElement("beforebegin", ratingElement);
+
+    fitTitleToSingleLine();
+
     return ratingElement;
 }
 
@@ -234,6 +257,31 @@ function updateRatingBadge(newRatingBadge, ratingData) {
         updateElement(selectors.generalRating, ratingData.rating);
         updateElement(selectors.generalVoteCount, ratingData.voteCount, 1);
     }
+
+    fitTitleToSingleLine();
+}
+
+// reduce titles font size to avoid line breaks
+function fitTitleToSingleLine() {
+    const element = document.querySelector('h1[data-testid="hero__pageTitle"] > span');
+    let fontSize = parseFloat(window.getComputedStyle(element).fontSize);
+
+    // if (element.offsetHeight < 68) {
+    //     while (element.offsetHeight < 68 && fontSize < 48) {
+    //         fontSize += 1;
+    //         element.style.fontSize = fontSize + "px";
+    //         if (element.offsetHeight >= 68) {
+    //             fontSize -= 1;
+    //             element.style.fontSize = fontSize + "px";
+    //             break;
+    //         }
+    //     }
+    // } else {
+    while (element.offsetHeight >= 68 && fontSize >= 26) {
+        fontSize -= 1;
+        element.style.fontSize = fontSize + "px";
+    }
+    // }
 }
 
 // -----------------------------------------------------------------------------------------------------
@@ -566,7 +614,7 @@ async function getMetacriticData() {
         }
     })();
 
-    return 0;
+    return metacriticDataPromise;
 }
 
 async function addMetacriticRatingBadge() {
@@ -726,7 +774,7 @@ async function getRottenTomatoesData() {
         }
     })();
 
-    return 0;
+    return rottenTomatoesDataPromise;
 }
 
 async function addRottenTomatoesRatingBadge() {
