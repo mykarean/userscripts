@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            IMDb with additional ratings
-// @description     Adds additional ratings (TMDB, Douban, Metacritic, Rotten Tomatoes, MyAnimeList). These can be activated or deactivated individually in the extension's configuration menu, which is accessible via the Tampermonkey menu. The extension also allows you to copy movie metadata by simply clicking on unlinked elements below the movie title.
-// @version         20241005
+// @description     Adds additional ratings (TMDB, Douban, Metacritic, Rotten Tomatoes, MyAnimeList) to imdb.com for movies and series. These can be activated or deactivated individually in the extension's configuration menu, which is accessible via the Tampermonkey menu. The extension also allows you to copy movie metadata by simply clicking on unlinked elements below the movie title.
+// @version         20241011
 // @author          mykarean
 // @icon            https://icons.duckduckgo.com/ip2/imdb.com.ico
 // @match           https://*.imdb.com/title/*
@@ -62,7 +62,7 @@ async function addCss() {
             /* added Badges */
             span[data-testid="hero-rating-bar__aggregate-rating"],
             .rating-bar__base-button > .ipc-btn {
-                padding: 4px 3px;
+                padding: 2px 3px;
                 border-radius: 5px !important;
             }
             span[data-testid=hero-rating-bar__aggregate-rating] {
@@ -114,6 +114,12 @@ async function addCss() {
             }
             .disabled-anchor:before {
                 background: unset !important;
+            }
+
+            /* title if line break */
+            span.hero__primary-text {
+                line-height: 30px;
+                display: inline-block;
             }
         `).setAttribute("id", "custom-css-style");
     }
@@ -277,7 +283,7 @@ function fitTitleToSingleLine() {
     //         }
     //     }
     // } else {
-    while (element.offsetHeight >= 68 && fontSize >= 26) {
+    while (element.offsetHeight >= 58 && fontSize >= 26) {
         fontSize -= 1;
         element.style.fontSize = fontSize + "px";
     }
@@ -324,7 +330,6 @@ async function getTmdbData() {
             console.log("TMDB: ", result);
             return {
                 source: "TMDB",
-                id: result.id,
                 rating: (Math.round(result.vote_average * 10) / 10).toLocaleString(local, {
                     minimumFractionDigits: 1,
                     maximumFractionDigits: 1,
@@ -335,7 +340,12 @@ async function getTmdbData() {
         })
         .catch((error) => {
             console.error("Error fetching TMDb data:", error);
-            return 0;
+            return Promise.resolve({
+                source: "TMDB",
+                rating: initialValue,
+                voteCount: initialValue,
+                url: null,
+            });
         });
 
     return tmdbDataPromise;
@@ -434,14 +444,18 @@ async function getDoubanData() {
             console.log("Douban: ", result);
             return {
                 source: "Douban",
-                id: result.id,
                 rating: rating,
                 voteCount: voteCount,
                 url: result.url,
             };
         } catch (error) {
             console.error("Error fetching Douban data:", error);
-            return 0;
+            return Promise.resolve({
+                source: "Douban",
+                rating: initialValue,
+                voteCount: initialValue,
+                url: null,
+            });
         }
     })();
 
@@ -1092,7 +1106,12 @@ async function getMyAnimeListDataByTitle() {
             return data;
         } else {
             console.log("No anime data found.");
-            return null;
+            return Promise.resolve({
+                source: "MyAnimeList",
+                rating: initialValue,
+                voteCount: initialValue,
+                url: null,
+            });
         }
     })();
 
@@ -1291,11 +1310,11 @@ async function main() {
     // ignore episode view
     if (!document.title.includes('"')) {
         addCss();
-        getTmdbData();
-        getDoubanData();
-        getMetacriticData();
-        getMyAnimeListDataByImdbId();
-        getRottenTomatoesData();
+        // getTmdbData();
+        // getDoubanData();
+        // getMetacriticData();
+        // getMyAnimeListDataByImdbId();
+        // getRottenTomatoesData();
 
         const observer = new MutationObserver(async () => {
             addCss();
@@ -1305,7 +1324,6 @@ async function main() {
             await addDoubanRatingBadge();
             await addTmdbRatingBadge();
 
-            // addGenresToTitle();
             collectMetadataForClipboard();
         });
 
