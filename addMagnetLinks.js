@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            BT4G & Limetorrents enhanced search
-// @description     Adds magnet links to BT4G and Limetorrents, filtering of search results by minimum and maximum size (BT4G only), keeping search terms in the input field in case of missing results (BT4G only), automatic reload in case of server errors
-// @version         20241015
+// @description     Adds magnet links to BT4G and Limetorrents, filtering of search results by minimum and maximum size (BT4G only), keeping search terms in the input field in case of missing results (BT4G only), automatic reload in case of server errors every 5 minutes
+// @version         20241017
 // @author          mykarean
 // @match           *://bt4gprx.com/*
 // @match           *://*.limetorrents.lol/search/all/*
@@ -61,15 +61,14 @@ function getElementByText(tag, regex, item = 0) {
 // search results handling
 // ---------------------------------------------------------
 
-function observeSearchResults() {
+function observeSearchResultsCssChange() {
     const observer = new MutationObserver(() => {
         observer.disconnect();
         setTimeout(() => {
             processLinksInSearchResults().then(() => {
-                itemFilterBySize();
-                observeSearchResults();
+                observeSearchResultsCssChange();
             });
-        }, 10);
+        }, 100);
     });
 
     observer.observe(document, {
@@ -77,6 +76,41 @@ function observeSearchResults() {
         subtree: true,
         attributes: true,
         attributeFilter: ["style"],
+    });
+}
+
+function observeNewSearchResults() {
+    const observer = new MutationObserver((mutations) => {
+        requestAnimationFrame(() => {
+            let hasNewResults = false;
+
+            for (const mutation of mutations) {
+                if (mutation.addedNodes.length > 0) {
+                    const newSearchResultWithSize = Array.from(mutation.addedNodes).some((node) => {
+                        if (node.querySelector) {
+                            return !!node.querySelector(".cpill");
+                        }
+                        return false;
+                    });
+
+                    if (newSearchResultWithSize) {
+                        hasNewResults = true;
+                        break;
+                    }
+                }
+            }
+
+            if (hasNewResults) {
+                itemFilterBySize();
+            }
+        });
+    });
+
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: false, // Ignore style changes from itemFilterBySize()
+        characterData: false, // Ignore text changes from processLinksInSearchResults()
     });
 }
 
@@ -95,7 +129,7 @@ async function processLinksInSearchResults() {
     // Add amount of visible magnet links into text
     const amountVisibleMagnets = links.length;
     const magnetLinkAllSpan = document.querySelector(".magnet-link-all-span");
-    if (links && typeof links.length === 'number' && magnetLinkAllSpan) {
+    if (links && typeof links.length === "number" && magnetLinkAllSpan) {
         magnetLinkAllSpan.innerHTML = `Open all <b>${amountVisibleMagnets}</b> loaded magnet links`;
     }
 
@@ -104,7 +138,7 @@ async function processLinksInSearchResults() {
         links.forEach((link) => {
             const title = link.title;
             if (title.includes("Downloader.exe") || title.includes("Downloader.dmg")) {
-                link.parentElement.parentElement.style.display = "none";
+                link.parentElement.parentElement.remove();
             }
         });
     }, 100);
@@ -299,7 +333,8 @@ function preserveKeywordsOnNoResults() {
 // ---------------------------------------------------------
 
 function itemFilterBySize() {
-    GM_addStyle(`
+    if (!document.getElementById("item-filter-styles")) {
+        GM_addStyle(`
         .filter-container {
             display: inline-flex;
             align-items: center;
@@ -321,7 +356,11 @@ function itemFilterBySize() {
             font-weight: bold;
             margin-left: 5px;
         }
-    `);
+        .hidden-item {
+            display: none !important;
+        }
+        `).setAttribute("id", "item-filter-styles");
+    }
 
     function createFilterControl(id, text) {
         const button = document.createElement("button");
@@ -361,36 +400,12 @@ function itemFilterBySize() {
         };
     }
 
-    async function applyItemFilterBySize() {
-        const minFiltered = await GM.getValue("isMinFiltered", false);
-        const maxFiltered = await GM.getValue("isMaxFiltered", false);
-        const minThreshold = await GM.getValue("minFilterThreshold", 1);
-        const maxThreshold = await GM.getValue("maxFilterThreshold", 10);
-
-        document.querySelectorAll("b.cpill").forEach((element) => {
-            const size = parseFloat(element.innerText);
-            const parentElement = element.parentElement.parentElement;
-
-            if (parentElement && size) {
-                const itemBelowGb = !element.className.includes("red-pill");
-                const hideMin = minFiltered && (size < minThreshold || itemBelowGb);
-                const hideMax = maxFiltered && size > maxThreshold && !itemBelowGb;
-
-                if (hideMin || hideMax) {
-                    parentElement.style.display = "none";
-                } else {
-                    parentElement.style.display = "";
-                }
-            }
-        });
-    }
-
     async function setupFilter(button, input, isMinFilter) {
         const filterType = isMinFilter ? "Min" : "Max";
         let isFiltered = await GM.getValue(`is${filterType}Filtered`, false);
         let threshold = await GM.getValue(`${filterType.toLowerCase()}FilterThreshold`, isMinFilter ? 1 : 10);
 
-        // button.textContent = isFiltered ? `${filterType} filter on` : `${filterType} filter off`;
+        button.textContent = isFiltered ? `${filterType} filter on` : `${filterType} filter off`;
         button.style.backgroundColor = isFiltered ? "#b2dfdb" : "#dfb2b2";
         input.value = threshold;
 
@@ -398,7 +413,7 @@ function itemFilterBySize() {
             isFiltered = !isFiltered;
             await GM.setValue(`is${filterType}Filtered`, isFiltered);
 
-            // button.textContent = isFiltered ? `${filterType} filter on` : `${filterType} filter off`;
+            button.textContent = isFiltered ? `${filterType} filter on` : `${filterType} filter off`;
             button.style.backgroundColor = isFiltered ? "#b2dfdb" : "#dfb2b2";
             await applyItemFilterBySize();
         });
@@ -423,17 +438,43 @@ function itemFilterBySize() {
         await applyItemFilterBySize();
     }
 
+    async function applyItemFilterBySize() {
+        const minFiltered = await GM.getValue("isMinFiltered", false);
+        const maxFiltered = await GM.getValue("isMaxFiltered", false);
+        const minThreshold = await GM.getValue("minFilterThreshold", 1);
+        const maxThreshold = await GM.getValue("maxFilterThreshold", 10);
+
+        document.querySelectorAll("b.cpill").forEach((element) => {
+            const size = parseFloat(element.innerText);
+            const parentElement = element.parentElement.parentElement;
+
+            if (parentElement && size) {
+                const itemBelowGb = !element.className.includes("red-pill");
+                const hideMin = minFiltered && (size < minThreshold || itemBelowGb);
+                const hideMax = maxFiltered && size > maxThreshold && !itemBelowGb;
+
+                if (hideMin || hideMax) {
+                    parentElement.classList.add("hidden-item");
+                } else {
+                    parentElement.classList.remove("hidden-item");
+                }
+            }
+        });
+    }
+
     // Check if toggle buttons already exist
     const existingMinButton = document.getElementById("filter-min-size-button");
     const existingMaxButton = document.getElementById("filter-max-size-button");
     if (!existingMinButton && !existingMaxButton) {
         initializeFilter();
+    } else {
+        applyItemFilterBySize();
     }
 }
 
 function main() {
     //handling of server errors
-    if (document.title.includes("Web server is returning an unknown error")) {
+    if (document.title.includes("Web server is returning an unknown error") || document.title.includes("525: SSL handshake failed")) {
         console.log("Web server error detected. Waiting 5 minutes before reloading...");
 
         setTimeout(() => {
@@ -443,14 +484,15 @@ function main() {
         switch (true) {
             // search results page
             case /\/search/.test(window.location.href):
-                addClickAllMagnetLinks();
-                observeSearchResults();
-                processLinksInSearchResults();
+                preserveKeywordsOnNoResults();
 
                 itemFilterBySize();
-                preserveKeywordsOnNoResults();
-                break;
+                processLinksInSearchResults();
+                addClickAllMagnetLinks();
 
+                observeSearchResultsCssChange();
+                observeNewSearchResults();
+                break;
             // BT4G only: torrent detail page
             case /\/magnet/.test(window.location.href):
                 const link = document.querySelector('a[href*="/hash/"]:not([href^="magnet:"])');
