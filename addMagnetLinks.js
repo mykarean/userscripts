@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            BT4G & Limetorrents enhanced search
 // @description     Adds magnet links to BT4G and Limetorrents, filtering of search results by minimum and maximum size (BT4G only), keeping search terms in the input field in case of missing results (BT4G only), automatic reload in case of server errors every 5 minutes
-// @version         20241017
+// @version         20241024
 // @author          mykarean
 // @match           *://bt4gprx.com/*
 // @match           *://*.limetorrents.lol/search/all/*
@@ -18,18 +18,20 @@
 
 "use strict";
 
-GM_addStyle(`
-    .magnet-link-img {
-        cursor: pointer;
-        margin: 0px 5px 2px;
-        vertical-align: bottom;
-        height: 20px;
-        transition: filter 0.2s ease;
-    }
-`);
+// ---------------------------------------------------------
+// Config/Requirements
+// ---------------------------------------------------------
 
+const currentPath = window.location.href;
 const hostname = location.hostname;
 let magnetImage = GM_info.script.icon;
+
+let itemsFoundElement;
+if (hostname === "bt4gprx.com") {
+    itemsFoundElement = document.querySelector("body > main > p");
+} else if (hostname === "www.limetorrents.lol") {
+    itemsFoundElement = getElementByText("h2", "Search Results");
+}
 
 /**
  * @param {String} tag Elements HTML Tag
@@ -55,6 +57,30 @@ function getElementByText(tag, regex, item = 0) {
     }
 
     return null;
+}
+
+// ---------------------------------------------------------
+// Layout
+// ---------------------------------------------------------
+
+function addCss() {
+    GM_addStyle(`
+        .magnet-link-img {
+            cursor: pointer;
+            margin: 0px 5px 2px;
+            vertical-align: bottom;
+            height: 20px;
+            transition: filter 0.2s ease;
+        }
+    `);
+
+    if (hostname === "bt4gprx.com") {
+        GM_addStyle(`
+            .lead {
+                display: inline-block;
+            }
+        `);
+    }
 }
 
 // ---------------------------------------------------------
@@ -126,6 +152,30 @@ async function processLinksInSearchResults() {
 
     await Promise.all(promises);
 
+    if (hostname.includes("bt1207")) {
+        for (let link of links) {
+            await processLinksInSearchResultsBt1207(link);
+            // await new Promise((resolve) => setTimeout(resolve, 100));
+
+            // add magnets on hover
+            link.addEventListener("mouseover", async function () {
+                const magnetLink = link.getAttribute("data-magnet-added");
+                if (magnetLink !== "true") {
+                    try {
+                        // Try to process the link
+                        await processLinksInSearchResultsBt1207(link);
+
+                        // Only set the attribute if no error occurs
+                        // link.setAttribute("data-magnet-added", "true");
+                    } catch (error) {
+                        console.error("Error processing link:", error);
+                        // Handle error (e.g., log it, but don't set data-magnet-added)
+                    }
+                }
+            });
+        }
+    }
+
     // Add amount of visible magnet links into text
     const amountVisibleMagnets = links.length;
     const magnetLinkAllSpan = document.querySelector(".magnet-link-all-span");
@@ -161,6 +211,8 @@ function getSearchResultLinks() {
         });
     } else if (hostname === "www.limetorrents.lol") {
         return document.querySelectorAll('a[href*="//itorrents.org/torrent/"]');
+    } else if (hostname.includes("bt1207")) {
+        return document.querySelectorAll("body > div.container-fluid > div:nth-child(6) > div.col-md-6 > ul > li:nth-child(1) > a");
     }
 }
 
@@ -188,6 +240,50 @@ async function processLinksInSearchResultsBt4g(link) {
         const downloadLink = doc.querySelector('a[href^="//downloadtorrentfile.com/hash/"]');
         if (downloadLink) {
             const hash = extractHashFromUrl(downloadLink.href.split("/").pop().split("?")[0]);
+            if (hash) {
+                insertMagnetLink(link, hash);
+                link.setAttribute("data-magnet-added", "true");
+            }
+        }
+    } catch (error) {
+        console.error("Error getting magnet link:", error);
+    }
+}
+
+async function processLinksInSearchResultsBt1207(link) {
+    try {
+        const details = {
+            method: "GET",
+            url: link.href,
+            timeout: 3000,
+            headers: {
+                Referer: document.referrer,
+                Cookie: document.cookie,
+                "User-Agent": navigator.userAgent,
+                Referer: window.location.href,
+                Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+                "Accept-Language": navigator.language || navigator.userLanguage,
+                "Accept-Encoding": "gzip, deflate, br",
+                Connection: "keep-alive",
+            },
+        };
+
+        const response = await requestGM_XHR(details);
+        const html = response.responseText;
+
+        // Find magnet links
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, "text/html");
+
+        // Skip if magnet link exists
+        const magnetLink = link.getAttribute("data-magnet-added");
+        if (magnetLink === "true") {
+            return;
+        }
+
+        const downloadLink = doc.querySelector("#magnet");
+        if (downloadLink) {
+            const hash = extractHashFromUrl(downloadLink.href);
             if (hash) {
                 insertMagnetLink(link, hash);
                 link.setAttribute("data-magnet-added", "true");
@@ -261,18 +357,14 @@ function addClickAllMagnetLinks() {
     //     return;
     // }
 
-    let itemsFoundElement;
-    if (hostname === "bt4gprx.com") {
-        itemsFoundElement = getElementByText("span", /Found\ [0-9].*\ items\ for\ .*/i);
-    } else if (hostname === "www.limetorrents.lol") {
-        itemsFoundElement = getElementByText("h2", "Search Results");
-    }
+    // no elements found
+    if (!itemsFoundElement.textContent.includes("items for")) return;
 
-    const targetElement = itemsFoundElement?.parentElement?.children[1];
+    const targetElement = itemsFoundElement?.parentElement?.children[3];
     if (targetElement) {
         const openAllMagnetLinksSpan = document.createElement("span");
         openAllMagnetLinksSpan.innerHTML = "Open all <b>0</b> loaded magnet links";
-        openAllMagnetLinksSpan.classList.add("magnet-link-all-span");
+        openAllMagnetLinksSpan.classList.add("magnet-link-all-span", "lead");
         openAllMagnetLinksSpan.style.marginLeft = "10px";
 
         const openAllMagnetLinksImg = document.createElement("img");
@@ -280,8 +372,8 @@ function addClickAllMagnetLinks() {
         openAllMagnetLinksImg.classList.add("magnet-link-img");
         openAllMagnetLinksImg.style.cssText = "cursor:pointer;vertical-align:sub;";
 
-        targetElement.parentNode.insertBefore(openAllMagnetLinksSpan, targetElement.nextSibling);
-        openAllMagnetLinksSpan.parentNode.insertBefore(openAllMagnetLinksImg, openAllMagnetLinksSpan.nextSibling);
+        targetElement.insertAdjacentElement("afterend", openAllMagnetLinksSpan);
+        openAllMagnetLinksSpan.insertAdjacentElement("afterend", openAllMagnetLinksImg);
 
         openAllMagnetLinksImg.addEventListener("click", () => {
             const addedMagnetLinks = document.querySelectorAll("a.magnet-link");
@@ -310,29 +402,15 @@ function addClickAllMagnetLinks() {
 }
 
 // ---------------------------------------------------------
-
-function preserveKeywordsOnNoResults() {
-    // Extract parameter value from the URL
-    const urlParams = new URLSearchParams(window.location.search);
-    const search = urlParams.get("q");
-
-    // handling no search results
-    const searchElement = document.querySelector("#search");
-    if (!searchElement?.value) {
-        console.log("no search results");
-
-        // set search input from URL parameter
-        if (searchElement && search) {
-            searchElement.value = search;
-        }
-    }
-}
-
-// ---------------------------------------------------------
 // size filter
 // ---------------------------------------------------------
 
 function itemFilterBySize() {
+    if (hostname !== "bt4gprx.com") return;
+
+    // no elements found
+    if (!itemsFoundElement.textContent.includes("items for")) return;
+
     if (!document.getElementById("item-filter-styles")) {
         GM_addStyle(`
         .filter-container {
@@ -349,7 +427,7 @@ function itemFilterBySize() {
         .filter-input {
             margin-left: 5px !important;
             padding-left: 12px !important;
-            width: 41px !important;
+            width: 50px !important;
             text-align: center !important;
         }
         .filter-label {
@@ -365,7 +443,7 @@ function itemFilterBySize() {
     function createFilterControl(id, text) {
         const button = document.createElement("button");
         button.id = id;
-        button.className = "filter-button";
+        button.className = "filter-button btn";
         button.textContent = text;
 
         const input = document.createElement("input");
@@ -428,7 +506,7 @@ function itemFilterBySize() {
     }
 
     async function initializeFilter() {
-        const buttonTarget = getElementByText("span", /Found\ [0-9].*\ items/i);
+        const buttonTarget = itemsFoundElement;
         if (!buttonTarget) return;
 
         const { minButton, maxButton, minInput, maxInput } = createFilterControls(buttonTarget);
@@ -446,7 +524,7 @@ function itemFilterBySize() {
 
         document.querySelectorAll("b.cpill").forEach((element) => {
             const size = parseFloat(element.innerText);
-            const parentElement = element.parentElement.parentElement;
+            const parentElement = element.parentElement.parentElement.parentElement;
 
             if (parentElement && size) {
                 const itemBelowGb = !element.className.includes("red-pill");
@@ -472,35 +550,30 @@ function itemFilterBySize() {
     }
 }
 
-function main() {
-    //handling of server errors
-    if (document.title.includes("Web server is returning an unknown error") || document.title.includes("525: SSL handshake failed")) {
+async function main() {
+    const ERROR_TITLES = ["Web server is returning an unknown error", "525: SSL handshake failed"];
+    if (ERROR_TITLES.some((error) => document.title.includes(error))) {
+        const RELOAD_DELAY = 5 * 60 * 1000;
         console.log("Web server error detected. Waiting 5 minutes before reloading...");
+        return setTimeout(() => location.reload(), RELOAD_DELAY);
+    }
 
-        setTimeout(() => {
-            location.reload();
-        }, 300000);
-    } else {
-        switch (true) {
-            // search results page
-            case /\/search/.test(window.location.href):
-                preserveKeywordsOnNoResults();
+    addCss();
 
-                itemFilterBySize();
-                processLinksInSearchResults();
-                addClickAllMagnetLinks();
+    // handle search results
+    if (/\/search/.test(currentPath)) {
+        itemFilterBySize();
+        addClickAllMagnetLinks();
+        await processLinksInSearchResults();
 
-                observeSearchResultsCssChange();
-                observeNewSearchResults();
-                break;
-            // BT4G only: torrent detail page
-            case /\/magnet/.test(window.location.href):
-                const link = document.querySelector('a[href*="/hash/"]:not([href^="magnet:"])');
-                const hash = extractHashFromUrl(link ? link.href : "");
-                if (hash) {
-                    insertMagnetLink(link, hash);
-                }
-                break;
+        observeSearchResultsCssChange();
+        observeNewSearchResults();
+    } else if (/\/magnet/.test(currentPath)) {
+        // BT4G only: torrent detail page
+        const link = document.querySelector('a[href*="/hash/"]:not([href^="magnet:"])');
+        const hash = extractHashFromUrl(link?.href || "");
+        if (hash) {
+            insertMagnetLink(link, hash);
         }
     }
 }
