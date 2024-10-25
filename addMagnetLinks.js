@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            BT4G & Limetorrents enhanced search
 // @description     Adds magnet links to BT4G and Limetorrents, filtering of search results by minimum and maximum size (BT4G only), keeping search terms in the input field in case of missing results (BT4G only), automatic reload in case of server errors every 5 minutes
-// @version         20241024
+// @version         20241025
 // @author          mykarean
 // @match           *://bt4gprx.com/*
 // @match           *://*.limetorrents.lol/search/all/*
@@ -30,7 +30,7 @@ let itemsFoundElement;
 if (hostname === "bt4gprx.com") {
     itemsFoundElement = document.querySelector("body > main > p");
 } else if (hostname === "www.limetorrents.lol") {
-    itemsFoundElement = getElementByText("h2", "Search Results");
+    itemsFoundElement = document.querySelector("#content > h2");
 }
 
 /**
@@ -180,7 +180,7 @@ async function processLinksInSearchResults() {
     const amountVisibleMagnets = links.length;
     const magnetLinkAllSpan = document.querySelector(".magnet-link-all-span");
     if (links && typeof links.length === "number" && magnetLinkAllSpan) {
-        magnetLinkAllSpan.innerHTML = `Open all <b>${amountVisibleMagnets}</b> loaded magnet links`;
+        magnetLinkAllSpan.innerHTML = `Open all <span class="badge bg-primary">${amountVisibleMagnets}</span> loaded magnet links`;
     }
 
     // Remove spam elements
@@ -358,12 +358,16 @@ function addClickAllMagnetLinks() {
     // }
 
     // no elements found
-    if (!itemsFoundElement.textContent.includes("items for")) return;
+    if (
+        document.querySelector("body > main > p")?.textContent.includes("did not match any documents") ||
+        document.querySelector("#content > h2:nth-child(9)")
+    )
+        return;
 
     const targetElement = itemsFoundElement?.parentElement?.children[3];
     if (targetElement) {
         const openAllMagnetLinksSpan = document.createElement("span");
-        openAllMagnetLinksSpan.innerHTML = "Open all <b>0</b> loaded magnet links";
+        openAllMagnetLinksSpan.innerHTML = "Open all <span class='badge bg-primary'>0</span> loaded magnet links";
         openAllMagnetLinksSpan.classList.add("magnet-link-all-span", "lead");
         openAllMagnetLinksSpan.style.marginLeft = "10px";
 
