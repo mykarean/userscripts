@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            BT4G & Limetorrents enhanced search
 // @description     Adds magnet links to BT4G and Limetorrents, filtering of search results by minimum and maximum size (BT4G only), keeping search terms in the input field in case of missing results (BT4G only), automatic reload in case of server errors every 5 minutes
-// @version         20241025
+// @version         20241101
 // @author          mykarean
 // @match           *://bt4gprx.com/*
 // @match           *://*.limetorrents.lol/search/all/*
@@ -78,6 +78,11 @@ function addCss() {
         GM_addStyle(`
             .lead {
                 display: inline-block;
+            }
+            /* removing the annoying hover effect on search results */
+            .result-item:hover,
+            .list-group-item:hover {
+                transform: none;
             }
         `);
     }
@@ -413,7 +418,7 @@ function itemFilterBySize() {
     if (hostname !== "bt4gprx.com") return;
 
     // no elements found
-    if (!itemsFoundElement.textContent.includes("items for")) return;
+    if (document.querySelector("body > main > p")?.textContent.includes("did not match any documents")) return;
 
     if (!document.getElementById("item-filter-styles")) {
         GM_addStyle(`
