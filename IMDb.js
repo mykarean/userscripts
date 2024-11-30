@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name            IMDb with additional ratings
-// @description     Adds additional ratings (TMDB, Douban, Metacritic, Rotten Tomatoes, MyAnimeList) to imdb.com for movies and series. These can be activated or deactivated individually in the extension's configuration menu, which is accessible via the Tampermonkey menu. The extension also allows you to copy movie metadata by simply clicking on unlinked elements below the movie title.
-// @version         20241011
+// @description     Adds additional ratings (TMDB, Douban, Metacritic, Rotten Tomatoes, MyAnimeList) to imdb.com for movies and series. These can be activated or deactivated individually in the extension's configuration menu, which is accessible via the Tampermonkey menu. The extension also allows you to copy movie metadata by simply clicking on the runtime below the movie title.
+// @version         20241130
 // @author          mykarean
 // @icon            https://icons.duckduckgo.com/ip2/imdb.com.ico
 // @match           https://*.imdb.com/title/*
+// @match           https://*.imdb.com/it/title/*
 // @connect         api.douban.com
 // @connect         wikidata.org
 // @connect         metacritic.com
@@ -43,6 +44,10 @@ function getOriginalTitle() {
     let originalTitle = document.querySelector('[data-testid="hero__pageTitle"] ~ div')?.textContent?.match(/^.*:\ (.*)/)?.[1];
     // Unicode normalisation and removal of diacritical characters to improve search on other pages
     return originalTitle?.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+function getAlsoKnownAsTitle() {
+    let alsoKnownAsTitle = document.querySelector("section[data-testid=Details] li[data-testid=title-details-akas] > div");
+    return alsoKnownAsTitle?.textContent;
 }
 
 GM_registerMenuCommand("Configuration", configurationMenu, "c");
@@ -1156,16 +1161,19 @@ let metadataAsText = "";
 function collectMetadataForClipboard() {
     let title = document.querySelector("span.hero__primary-text")?.textContent;
     let genres = document.querySelector("div[data-testid='interests'] div.ipc-chip-list__scroller")?.childNodes;
-    let additionalMetadata = document.querySelector('[data-testid="hero__pageTitle"]')?.parentElement?.querySelector("ul");
+    let additionalMetadataRuntime = document
+        .querySelector('[data-testid="hero__pageTitle"]')
+        ?.parentElement?.querySelector("ul li:last-of-type");
+    let additionalMetadata = document.querySelector('[data-testid="hero__pageTitle"]')?.parentElement?.querySelectorAll("ul > li");
 
     // if click listener does not exist
-    if (!document.querySelector("ul.collectMetadataForClipboardListener") && title && genres && additionalMetadata) {
+    if (!document.querySelector(".collectMetadataForClipboardListener") && title) {
         if (genres && additionalMetadata) {
             if (metadataAsText === "") {
                 // add title
                 metadataAsText += title + " | ";
                 // collect additional metadata
-                for (let element of additionalMetadata?.childNodes) metadataAsText += element.textContent + " | ";
+                for (let element of additionalMetadata) metadataAsText += element.textContent + " | ";
                 // collect genres
                 let iteration = genres?.length;
                 for (let genre of genres) {
@@ -1176,13 +1184,14 @@ function collectMetadataForClipboard() {
                 }
             }
 
-            additionalMetadata.style.cursor = "pointer";
-            additionalMetadata.addEventListener("click", function () {
+            additionalMetadataRuntime.style.cursor = "pointer";
+            additionalMetadataRuntime.addEventListener("click", function () {
+                console.log("test");
                 navigator.clipboard.writeText(metadataAsText);
             });
 
             // to know if click listener is still there
-            additionalMetadata.classList.add("collectMetadataForClipboardListener");
+            additionalMetadataRuntime.classList.add("collectMetadataForClipboardListener");
         }
     }
 }
@@ -1309,6 +1318,7 @@ function configurationMenu() {
 async function main() {
     // ignore episode view
     if (!document.title.includes('"')) {
+        console.log("ok");
         addCss();
         // getTmdbData();
         // getDoubanData();
@@ -1317,14 +1327,20 @@ async function main() {
         // getRottenTomatoesData();
 
         const observer = new MutationObserver(async () => {
-            addCss();
-            await addMyAnimeListRatingBadge();
-            await addRottenTomatoesRatingBadge();
-            await addMetacriticRatingBadge();
-            await addDoubanRatingBadge();
-            await addTmdbRatingBadge();
+            // ignore video games
+            const metadataFirstElement = document
+                .querySelector('[data-testid="hero__pageTitle"]')
+                ?.parentElement?.querySelector("ul > li");
+            if (metadataFirstElement && !metadataFirstElement.textContent.toLowerCase().includes("vid")) {
+                addCss();
+                await addMyAnimeListRatingBadge();
+                await addRottenTomatoesRatingBadge();
+                await addMetacriticRatingBadge();
+                await addDoubanRatingBadge();
+                await addTmdbRatingBadge();
 
-            collectMetadataForClipboard();
+                collectMetadataForClipboard();
+            }
         });
 
         observer.observe(document.documentElement, { childList: true, subtree: true });
