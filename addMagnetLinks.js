@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            BT4G & Limetorrents enhanced search
 // @description     Adds magnet links to BT4G and Limetorrents, filtering of search results by minimum and maximum size (BT4G only), keeping search terms in the input field in case of missing results (BT4G only), automatic reload in case of server errors every 5 minutes
-// @version         20241101
+// @version         20250222
 // @author          mykarean
 // @match           *://bt4gprx.com/*
 // @match           *://*.limetorrents.lol/search/all/*
@@ -112,35 +112,34 @@ function observeSearchResultsCssChange() {
 
 function observeNewSearchResults() {
     const observer = new MutationObserver((mutations) => {
-        requestAnimationFrame(() => {
-            let hasNewResults = false;
+        let hasNewResults = false;
 
-            for (const mutation of mutations) {
-                if (mutation.addedNodes.length > 0) {
-                    const newSearchResultWithSize = Array.from(mutation.addedNodes).some((node) => {
-                        if (node.querySelector) {
-                            return !!node.querySelector(".cpill");
-                        }
-                        return false;
-                    });
-
-                    if (newSearchResultWithSize) {
-                        hasNewResults = true;
-                        break;
+        for (const mutation of mutations) {
+            if (mutation.addedNodes.length > 0) {
+                const newSearchResultWithSize = Array.from(mutation.addedNodes).some((node) => {
+                    if (node.querySelector) {
+                        // Returns boolean value indicating whether the element with class "cpill" exists in `node`
+                        return !!node.querySelector(".cpill");
                     }
+                    return false;
+                });
+
+                if (newSearchResultWithSize) {
+                    hasNewResults = true;
+                    break;
                 }
             }
+        }
 
-            if (hasNewResults) {
-                itemFilterBySize();
-            }
-        });
+        if (hasNewResults) {
+            itemFilterBySize();
+        }
     });
 
     observer.observe(document.body, {
         childList: true,
         subtree: true,
-        attributes: false, // Ignore style changes from itemFilterBySize()
+        // attributes: false, // Ignore style changes from itemFilterBySize()
         characterData: false, // Ignore text changes from processLinksInSearchResults()
     });
 }
@@ -336,7 +335,7 @@ function insertMagnetLink(link, hash) {
     newLink.classList.add("magnet-link");
     newLink.href = magnetLink;
     newLink.addEventListener("click", function () {
-        imgElement.style.filter = "grayscale(100%) opacity(0.7)";
+        imgElement.style.filter = "grayscale(100%) opacity(0.5)";
     });
 
     const imgElement = document.createElement("img");
@@ -387,7 +386,7 @@ function addClickAllMagnetLinks() {
         openAllMagnetLinksImg.addEventListener("click", () => {
             const addedMagnetLinks = document.querySelectorAll("a.magnet-link");
             if (addedMagnetLinks.length > 0) {
-                openAllMagnetLinksImg.style.filter = "grayscale(100%) opacity(0.7)";
+                openAllMagnetLinksImg.style.filter = "grayscale(100%) opacity(0.5)";
                 addedMagnetLinks.forEach((link, index) => {
                     // ignore hidden elements
                     if (getComputedStyle(link.parentElement.parentElement).display !== "none") {
