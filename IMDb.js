@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            IMDb with additional ratings
 // @description     Adds additional ratings (TMDB, Douban, Metacritic, Rotten Tomatoes, MyAnimeList) to imdb.com for movies and series. These can be activated or deactivated individually in the extension's configuration menu, which is accessible via the Tampermonkey menu. The extension also allows you to copy movie metadata by simply clicking on the runtime below the movie title.
-// @version         20241211
+// @version         20250521
 // @author          mykarean
 // @icon            https://icons.duckduckgo.com/ip2/imdb.com.ico
 // @match           https://*.imdb.com/title/*
@@ -129,7 +129,7 @@ async function addCss() {
         `).setAttribute("id", "custom-css-style");
     }
     const imdbRatingName = document.querySelector('div[data-testid="hero-rating-bar__aggregate-rating"] > div');
-    if (imdbRatingName) {
+    if (imdbRatingName && imdbRatingName.textContent !== "IMDb") {
         imdbRatingName.textContent = "IMDb";
     }
 
@@ -1335,6 +1335,7 @@ async function main() {
                 !metadataFirstElement.textContent.toLowerCase().includes("vid") &&
                 !metadataFirstElement.textContent.includes("वीडियो गेम")
             ) {
+                // make sure CSS is not removed from DOM
                 addCss();
                 await addMyAnimeListRatingBadge();
                 await addRottenTomatoesRatingBadge();
