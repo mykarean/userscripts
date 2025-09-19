@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            BT4G & Limetorrents enhanced search
 // @description     Adds magnet links to BT4G and Limetorrents, filtering of search results by minimum and maximum size (BT4G only), keeping search terms in the input field in case of missing results (BT4G only), automatic reload in case of server errors every 5 minutes
-// @version         20250621
+// @version         20250919
 // @author          mykarean
 // @match           *://bt4gprx.com/*
 // @match           *://*.limetorrents.lol/search/all/*
