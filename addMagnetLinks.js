@@ -92,12 +92,13 @@ function addCss() {
 // search results handling
 // ---------------------------------------------------------
 
-function observeSearchResultsCssChange() {
+function observeSearchResultsChange() {
     const observer = new MutationObserver(() => {
         observer.disconnect();
         setTimeout(() => {
+            // console.debug("Search results changed, processing links...");
             processLinksInSearchResults().then(() => {
-                observeSearchResultsCssChange();
+                observeSearchResultsChange();
             });
         }, 100);
     });
@@ -222,6 +223,12 @@ function getSearchResultLinks() {
 
 async function processLinksInSearchResultsBt4g(link) {
     try {
+        // Skip if magnet link exists
+        const magnetLink = link.getAttribute("data-magnet-added");
+        if (magnetLink === "true") {
+            return;
+        }
+
         const details = {
             method: "GET",
             url: link.href,
@@ -234,12 +241,6 @@ async function processLinksInSearchResultsBt4g(link) {
         // Find magnet links
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, "text/html");
-
-        // Skip if magnet link exists
-        const magnetLink = link.getAttribute("data-magnet-added");
-        if (magnetLink === "true") {
-            return;
-        }
 
         const downloadLink = doc.querySelector('a[href^="//downloadtorrentfile.com/hash/"]');
         if (downloadLink) {
@@ -434,7 +435,7 @@ function itemFilterBySize() {
         }
         .filter-input {
             margin-left: 5px !important;
-            padding-left: 12px !important;
+            /* padding-left: 12px !important; */
             width: 50px !important;
             text-align: center !important;
         }
@@ -574,7 +575,7 @@ async function main() {
         addClickAllMagnetLinks();
         await processLinksInSearchResults();
 
-        observeSearchResultsCssChange();
+        observeSearchResultsChange();
         observeNewSearchResults();
     } else if (/\/magnet/.test(currentPath)) {
         // BT4G only: torrent detail page
