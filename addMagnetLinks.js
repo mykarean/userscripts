@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            Magnet Links & Torrent Search Filter
 // @description     Adds magnet links to BT4G, Limetorrents, BT1207, filtering of search results by minimum and maximum size (BT4G only), automatic reload in case of server errors every 5 minutes
-// @version         20251001
+// @version         20251002
 // @author          mykarean
 // @match           *://bt4gprx.com/*
 // @match           *://*.limetorrents.fun/search/all/*
@@ -146,7 +146,7 @@ function requestGM_XHR(details) {
 // Register menu command with current state
 function addMenuCommand() {
     const currentState = GM_getValue("includeDN", true);
-    const menuText = `Add Name to Magnet Links: ${currentState ? "ON" : "OFF"}`;
+    const menuText = `Add Name to Magnet Links ${currentState ? "✔️" : "❌"}`;
 
     GM_registerMenuCommand(menuText, toggleIncludeDN);
 }
