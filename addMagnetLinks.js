@@ -1,15 +1,18 @@
 // ==UserScript==
-// @name            BT4G & Limetorrents enhanced search
-// @description     Adds magnet links to BT4G and Limetorrents, filtering of search results by minimum and maximum size (BT4G only), keeping search terms in the input field in case of missing results (BT4G only), automatic reload in case of server errors every 5 minutes
-// @version         20250919
+// @name            Magnet Links & Torrent Search Filter
+// @description     Adds magnet links to BT4G, Limetorrents, BT1207, filtering of search results by minimum and maximum size (BT4G only), automatic reload in case of server errors every 5 minutes
+// @version         20251001
 // @author          mykarean
 // @match           *://bt4gprx.com/*
-// @match           *://*.limetorrents.lol/search/all/*
+// @match           *://*.limetorrents.fun/search/all/*
+// @match           *://bt1207so.top/search*
+// @match           *://bt1207un.top/search*
 // @run-at          document-idle
 // @grant           GM_xmlhttpRequest
 // @grant           GM_addStyle
 // @grant           GM_setValue
 // @grant           GM_getValue
+// @grant           GM_registerMenuCommand
 // @compatible      chrome
 // @license         GPL3
 // @noframes
@@ -22,16 +25,78 @@
 // Config/Requirements
 // ---------------------------------------------------------
 
+const limetorrentsURL = "www.limetorrents.fun";
+const bt4gURL = "bt4gprx.com";
+
 const currentPath = window.location.href;
 const hostname = location.hostname;
-let magnetImage = GM_info.script.icon;
+const magnetImage = GM_info.script.icon;
 
 let itemsFoundElement;
-if (hostname === "bt4gprx.com") {
+if (hostname === bt4gURL) {
     itemsFoundElement = document.querySelector("body > main > p");
-} else if (hostname === "www.limetorrents.lol") {
+} else if (hostname === limetorrentsURL) {
     itemsFoundElement = document.querySelector("#content > h2");
 }
+
+// ---------------------------------------------------------
+// Layout
+// ---------------------------------------------------------
+
+function addCss() {
+    GM_addStyle(`
+        .magnet-link-img {
+            cursor: pointer;
+            margin: 0px 5px;
+            vertical-align: sub;
+            height: 20px;
+            transition: filter 0.2s ease;
+        }
+        a.magnet-link {
+            display: inline-block !important;
+            vertical-align: middle;
+            margin-right: 10px;
+            border-radius: 6px;
+            padding: 1px 10px 3px 0;
+            background: #000000;
+            outline: 2px solid #ffffff00;
+            font-family: system-ui,-apple-system,sans-serif;
+            font-size: 16px;
+            font-weight: 400;
+            color: white;
+            text-decoration: none;
+            user-select: none;
+            transition: outline .15s ease-in-out;
+        }
+        a.magnet-link:hover {
+            outline: 2px solid #ff3f00;
+        }
+    `);
+    if (hostname === bt4gURL && location.pathname === "/search") {
+        GM_addStyle(`
+            a.magnet-link {
+                vertical-align: top;
+            }
+        `);
+    }
+
+    if (hostname === bt4gURL) {
+        GM_addStyle(`
+            .lead {
+                display: inline-block;
+            }
+            /* removing the annoying hover effect on search results */
+            .result-item:hover,
+            .list-group-item:hover {
+                transform: none;
+            }
+        `);
+    }
+}
+
+// ---------------------------------------------------------
+// Helper
+// ---------------------------------------------------------
 
 /**
  * @param {String} tag Elements HTML Tag
@@ -59,33 +124,79 @@ function getElementByText(tag, regex, item = 0) {
     return null;
 }
 
+function requestGM_XHR(details) {
+    return new Promise((resolve, reject) => {
+        details.onload = function (response) {
+            resolve(response);
+        };
+        details.onerror = function (response) {
+            reject(response);
+        };
+        details.ontimeout = function () {
+            reject(new Error("Request timed out"));
+        };
+        GM_xmlhttpRequest(details);
+    });
+}
+
 // ---------------------------------------------------------
-// Layout
+// Configuration menu
 // ---------------------------------------------------------
 
-function addCss() {
-    GM_addStyle(`
-        .magnet-link-img {
-            cursor: pointer;
-            margin: 0px 5px 2px;
-            vertical-align: bottom;
-            height: 20px;
-            transition: filter 0.2s ease;
-        }
-    `);
+// Register menu command with current state
+function addMenuCommand() {
+    const currentState = GM_getValue("includeDN", true);
+    const menuText = `Add Name to Magnet Links: ${currentState ? "ON" : "OFF"}`;
 
-    if (hostname === "bt4gprx.com") {
-        GM_addStyle(`
-            .lead {
-                display: inline-block;
-            }
-            /* removing the annoying hover effect on search results */
-            .result-item:hover,
-            .list-group-item:hover {
-                transform: none;
-            }
-        `);
-    }
+    GM_registerMenuCommand(menuText, toggleIncludeDN);
+}
+
+// Toggle function
+function showToast(message) {
+    const toast = document.createElement("div");
+    toast.textContent = message;
+    toast.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: #323232;
+        color: white;
+        padding: 15px 20px;
+        border-radius: 5px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        z-index: 10000;
+        font-family: Arial, sans-serif;
+        font-size: 14px;
+        opacity: 0;
+        transition: opacity 0.3s ease-in-out;
+    `;
+
+    document.body.appendChild(toast);
+
+    // Trigger fade-in animation
+    setTimeout(() => {
+        toast.style.opacity = "1";
+    }, 10);
+
+    // Fade out and remove
+    setTimeout(() => {
+        toast.style.opacity = "0";
+        setTimeout(() => toast.remove(), 300);
+    }, 1500);
+}
+
+function toggleIncludeDN() {
+    const currentState = GM_getValue("includeDN", true);
+    const newState = !currentState;
+    GM_setValue("includeDN", newState);
+
+    showToast(`Add Name to Magnet Links: ${newState ? "ON" : "OFF"}`);
+
+    // Reload page to apply changes
+    setTimeout(() => {
+        location.reload();
+    }, 2000);
 }
 
 // ---------------------------------------------------------
@@ -148,9 +259,9 @@ function observeNewSearchResults() {
 async function processLinksInSearchResults() {
     const links = Array.from(getSearchResultLinks());
     const promises = links.map(async (link) => {
-        if (hostname === "bt4gprx.com") {
+        if (hostname === bt4gURL) {
             await processLinksInSearchResultsBt4g(link);
-        } else if (hostname === "www.limetorrents.lol") {
+        } else if (hostname === limetorrentsURL) {
             processLinksInSearchResultsLimeTorrents(link);
         }
     });
@@ -200,7 +311,7 @@ async function processLinksInSearchResults() {
 }
 
 function getSearchResultLinks() {
-    if (hostname === "bt4gprx.com") {
+    if (hostname === bt4gURL) {
         const elements = document.querySelectorAll('a[href*="/magnet/"]:not([href^="magnet:"])');
 
         // Filter and return only the visible elements (those without 'display: none' in their parent chain)
@@ -214,8 +325,8 @@ function getSearchResultLinks() {
             }
             return true;
         });
-    } else if (hostname === "www.limetorrents.lol") {
-        return document.querySelectorAll('a[href*="//itorrents.org/torrent/"]');
+    } else if (hostname === limetorrentsURL) {
+        return document.querySelectorAll('a[href*="//itorrents.net/torrent/"]');
     } else if (hostname.includes("bt1207")) {
         return document.querySelectorAll("body > div.container-fluid > div:nth-child(6) > div.col-md-6 > ul > li:nth-child(1) > a");
     }
@@ -225,9 +336,7 @@ async function processLinksInSearchResultsBt4g(link) {
     try {
         // Skip if magnet link exists
         const magnetLink = link.getAttribute("data-magnet-added");
-        if (magnetLink === "true") {
-            return;
-        }
+        if (magnetLink === "true") return;
 
         const details = {
             method: "GET",
@@ -245,8 +354,9 @@ async function processLinksInSearchResultsBt4g(link) {
         const downloadLink = doc.querySelector('a[href^="//downloadtorrentfile.com/hash/"]');
         if (downloadLink) {
             const hash = extractHashFromUrl(downloadLink.href.split("/").pop().split("?")[0]);
+            const torrentName = link?.textContent;
             if (hash) {
-                insertMagnetLink(link, hash);
+                insertMagnetLink(link, hash, torrentName);
                 link.setAttribute("data-magnet-added", "true");
             }
         }
@@ -282,15 +392,14 @@ async function processLinksInSearchResultsBt1207(link) {
 
         // Skip if magnet link exists
         const magnetLink = link.getAttribute("data-magnet-added");
-        if (magnetLink === "true") {
-            return;
-        }
+        if (magnetLink === "true") return;
 
         const downloadLink = doc.querySelector("#magnet");
         if (downloadLink) {
             const hash = extractHashFromUrl(downloadLink.href);
+            const torrentName = link?.textContent;
             if (hash) {
-                insertMagnetLink(link, hash);
+                insertMagnetLink(link, hash, torrentName);
                 link.setAttribute("data-magnet-added", "true");
             }
         }
@@ -299,39 +408,33 @@ async function processLinksInSearchResultsBt1207(link) {
     }
 }
 
-function requestGM_XHR(details) {
-    return new Promise((resolve, reject) => {
-        details.onload = function (response) {
-            resolve(response);
-        };
-        details.onerror = function (response) {
-            reject(response);
-        };
-        details.ontimeout = function () {
-            reject(new Error("Request timed out"));
-        };
-        GM_xmlhttpRequest(details);
-    });
-}
-
 function processLinksInSearchResultsLimeTorrents(link) {
+    console.log("link: ", link);
     // Skip if magnet link exists
     const magnetLink = link.getAttribute("data-magnet-added");
-    if (magnetLink === "true") {
-        return;
-    }
+    if (magnetLink === "true") return;
 
     const hash = extractHashFromUrl(link.href.split("/").pop().split("?")[0]);
+    const torrentName = link?.nextElementSibling?.textContent;
     if (hash) {
-        insertMagnetLink(link, hash);
+        insertMagnetLink(link, hash, torrentName);
         link.setAttribute("data-magnet-added", "true");
         // Hide unnecessary element
         link.style.display = "none";
     }
 }
 
-function insertMagnetLink(link, hash) {
-    const magnetLink = `magnet:?xt=urn:btih:${hash}`;
+function insertMagnetLink(link, hash, torrentName = "") {
+    // Get configuration value to determine if display name should be included
+    const includeDN = GM_getValue("includeDN", true);
+    let magnetLink = `magnet:?xt=urn:btih:${hash}`;
+
+    // Add display name parameter if enabled and torrentName is provided
+    if (includeDN && torrentName) {
+        const encodedName = encodeURIComponent(torrentName);
+        magnetLink += `&dn=${encodedName}`;
+    }
+
     const newLink = document.createElement("a");
     newLink.classList.add("magnet-link");
     newLink.href = magnetLink;
@@ -343,7 +446,13 @@ function insertMagnetLink(link, hash) {
     imgElement.src = magnetImage;
     imgElement.classList.add("magnet-link-img");
 
+    // Create a text node after the image
+    const textNode = document.createTextNode("Magnet Link");
+
+    // Append image first, then text
     newLink.appendChild(imgElement);
+    newLink.appendChild(textNode);
+
     link.parentNode.insertBefore(newLink, link);
 }
 
@@ -402,9 +511,9 @@ function addClickAllMagnetLinks() {
         });
 
         // for a fixed position and more space, remove superfluous information
-        if (hostname === "bt4gprx.com") {
+        if (hostname === bt4gURL) {
             itemsFoundElement.innerHTML = itemsFoundElement.innerHTML.replace(/(\ items)\ for\ .*/, "$1");
-        } else if (hostname === "www.limetorrents.lol") {
+        } else if (hostname === limetorrentsURL) {
             itemsFoundElement.textContent = "";
         }
     }
@@ -415,7 +524,7 @@ function addClickAllMagnetLinks() {
 // ---------------------------------------------------------
 
 function itemFilterBySize() {
-    if (hostname !== "bt4gprx.com") return;
+    if (hostname !== bt4gURL) return;
 
     // no elements found
     if (document.querySelector("body > main > p")?.textContent.includes("did not match any documents")) return;
@@ -569,6 +678,8 @@ async function main() {
 
     addCss();
 
+    addMenuCommand();
+
     // handle search results
     if (/\/search/.test(currentPath)) {
         itemFilterBySize();
@@ -581,8 +692,9 @@ async function main() {
         // BT4G only: torrent detail page
         const link = document.querySelector('a[href*="/hash/"]:not([href^="magnet:"])');
         const hash = extractHashFromUrl(link?.href || "");
+        const torrentName = document.querySelector("body main h3")?.textContent;
         if (hash) {
-            insertMagnetLink(link, hash);
+            insertMagnetLink(link, hash, torrentName);
         }
     }
 }
