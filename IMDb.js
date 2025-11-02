@@ -17,7 +17,8 @@
 // @grant           GM_xmlhttpRequest
 // @grant           GM_registerMenuCommand
 // @run-at          document-start
-// @compatible      chrome
+// @compatible      chromium
+// @compatible      tampermonkey
 // @license         GPL3
 // ==/UserScript==
 
