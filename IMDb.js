@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name            IMDb with additional ratings
 // @description     Adds additional ratings (TMDB, Douban, Metacritic, Rotten Tomatoes, MyAnimeList) to imdb.com for movies and series. These can be activated or deactivated individually in the extension's configuration menu, which is accessible via the Tampermonkey menu. The extension also allows you to copy movie metadata by simply clicking on the runtime below the movie title.
-// @version         20250521
+// @version         20251102
 // @author          mykarean
-// @icon            https://icons.duckduckgo.com/ip2/imdb.com.ico
+// @icon            http://imdb.com/favicon.ico
 // @match           https://*.imdb.com/title/*
 // @match           https://*.imdb.com/*/title/*
 // @connect         api.douban.com
@@ -123,8 +123,8 @@ async function addCss() {
 
             /* title if line break */
             span.hero__primary-text {
-                line-height: 30px;
-                display: inline-block;
+                line-height: 40px;
+                display: block;
             }
         `).setAttribute("id", "custom-css-style");
     }
@@ -397,7 +397,7 @@ async function getDoubanData() {
 
     const fetchFromDouban = (url, method = "GET", data = null) =>
         new Promise((resolve, reject) => {
-            GM.xmlHttpRequest({
+            GM_xmlhttpRequest({
                 method,
                 url,
                 data,
@@ -413,7 +413,7 @@ async function getDoubanData() {
                     }
                 },
                 onerror: (error) => {
-                    console.error(`Error during GM.xmlHttpRequest to ${url}:`, error.statusText);
+                    console.error(`Error during GM_xmlhttpRequest to ${url}:`, error.statusText);
                     reject(error);
                 },
             });
@@ -509,7 +509,7 @@ async function getMetacriticData() {
 
     async function getMetacriticId() {
         return new Promise((resolve) => {
-            GM.xmlHttpRequest({
+            GM_xmlhttpRequest({
                 method: "GET",
                 timeout: 10000,
                 headers: { "User-Agent": USER_AGENT },
@@ -538,7 +538,7 @@ async function getMetacriticData() {
 
     function fetchMetacriticData(url) {
         return new Promise((resolve, reject) => {
-            GM.xmlHttpRequest({
+            GM_xmlhttpRequest({
                 method: "GET",
                 url: url,
                 headers: { "User-Agent": USER_AGENT },
@@ -678,7 +678,7 @@ async function getRottenTomatoesData() {
 
     async function getRottenTomatoesId() {
         return new Promise((resolve) => {
-            GM.xmlHttpRequest({
+            GM_xmlhttpRequest({
                 method: "GET",
                 timeout: 10000,
                 headers: { "User-Agent": USER_AGENT },
@@ -707,7 +707,7 @@ async function getRottenTomatoesData() {
 
     function fetchRottenTomatoesData(url) {
         return new Promise((resolve, reject) => {
-            GM.xmlHttpRequest({
+            GM_xmlhttpRequest({
                 method: "GET",
                 url: url,
                 headers: { "User-Agent": USER_AGENT },
@@ -842,7 +842,7 @@ async function getMyAnimeListDataByImdbId() {
         const url = `https://query.wikidata.org/sparql?format=json&query=SELECT * WHERE {?s wdt:P345 "${imdbId}". OPTIONAL {?s wdt:P4086 ?MyAnimeList_ID.} OPTIONAL {?s wdt:P8729 ?AniList_ID.}}`;
 
         return new Promise((resolve) => {
-            GM.xmlHttpRequest({
+            GM_xmlhttpRequest({
                 method: "GET",
                 timeout: 10000,
                 url: url,
@@ -887,7 +887,7 @@ async function getMyAnimeListDataByImdbId() {
     function fetchMyAnimeListData(myAnimeListId) {
         return new Promise((resolve, reject) => {
             const url = "https://api.jikan.moe/v4/anime/" + myAnimeListId;
-            GM.xmlHttpRequest({
+            GM_xmlhttpRequest({
                 method: "GET",
                 timeout: 10000,
                 url: url,
