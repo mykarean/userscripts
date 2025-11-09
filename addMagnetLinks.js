@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            Magnet Links & Torrent Search Filter
 // @description     Adds magnet links to BT4G, Limetorrents, BT1207, filtering of search results by minimum and maximum size (BT4G only), automatic reload in case of server errors every 5 minutes
-// @version         20251002
+// @version         20251109
 // @author          mykarean
 // @match           *://bt4gprx.com/*
 // @match           *://*.limetorrents.fun/search/all/*
@@ -122,6 +122,14 @@ function getElementByText(tag, regex, item = 0) {
     }
 
     return null;
+}
+
+async function requestNativeFetch(url) {
+    const response = await fetch(url, {
+        credentials: "same-origin",
+    });
+    if (!response.ok) throw new Error("Request failed");
+    return await response.text();
 }
 
 function requestGM_XHR(details) {
@@ -260,6 +268,7 @@ async function processLinksInSearchResults() {
     const links = Array.from(getSearchResultLinks());
     const promises = links.map(async (link) => {
         if (hostname === bt4gURL) {
+            // return;
             await processLinksInSearchResultsBt4g(link);
         } else if (hostname === limetorrentsURL) {
             processLinksInSearchResultsLimeTorrents(link);
@@ -338,19 +347,13 @@ async function processLinksInSearchResultsBt4g(link) {
         const magnetLink = link.getAttribute("data-magnet-added");
         if (magnetLink === "true") return;
 
-        const details = {
-            method: "GET",
-            url: link.href,
-            timeout: 5000,
-        };
-
-        const response = await requestGM_XHR(details);
-        const html = response.responseText;
+        // Fetch the details page content
+        // requestGM_XHR() is not working with Cloudflare protection anymore
+        const html = await requestNativeFetch(link.href);
 
         // Find magnet links
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, "text/html");
-
         const downloadLink = doc.querySelector('a[href^="//downloadtorrentfile.com/hash/"]');
         if (downloadLink) {
             const hash = extractHashFromUrl(downloadLink.href.split("/").pop().split("?")[0]);
@@ -367,6 +370,10 @@ async function processLinksInSearchResultsBt4g(link) {
 
 async function processLinksInSearchResultsBt1207(link) {
     try {
+        // Skip if magnet link exists
+        const magnetLink = link.getAttribute("data-magnet-added");
+        if (magnetLink === "true") return;
+
         const details = {
             method: "GET",
             url: link.href,
@@ -383,17 +390,13 @@ async function processLinksInSearchResultsBt1207(link) {
             },
         };
 
+        // Fetch the details page content
         const response = await requestGM_XHR(details);
         const html = response.responseText;
 
         // Find magnet links
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, "text/html");
-
-        // Skip if magnet link exists
-        const magnetLink = link.getAttribute("data-magnet-added");
-        if (magnetLink === "true") return;
-
         const downloadLink = doc.querySelector("#magnet");
         if (downloadLink) {
             const hash = extractHashFromUrl(downloadLink.href);
@@ -409,7 +412,6 @@ async function processLinksInSearchResultsBt1207(link) {
 }
 
 function processLinksInSearchResultsLimeTorrents(link) {
-    console.log("link: ", link);
     // Skip if magnet link exists
     const magnetLink = link.getAttribute("data-magnet-added");
     if (magnetLink === "true") return;
