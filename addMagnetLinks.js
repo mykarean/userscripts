@@ -68,6 +68,14 @@ function addCss() {
             user-select: none;
             transition: outline .15s ease-in-out;
         }
+        /* detail page */
+        .card-body a.magnet-link {
+            padding: 0.375rem 0.75rem;
+            border: 0.8px solid transparent;
+        }
+        .card-body a.magnet-link .magnet-link-img {
+            margin-left: 0;
+        }
         a.magnet-link:hover {
             outline: 2px solid #ff3f00;
         }
