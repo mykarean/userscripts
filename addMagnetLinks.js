@@ -43,7 +43,7 @@ if (hostname === bt4gURL) {
 // Layout
 // ---------------------------------------------------------
 
-function addCss() {
+function setStylesAndFavicon() {
     GM_addStyle(`
         .magnet-link-img {
             cursor: pointer;
@@ -68,7 +68,7 @@ function addCss() {
             user-select: none;
             transition: outline .15s ease-in-out;
         }
-        /* detail page */
+        /* detail page of BT4G */
         .card-body a.magnet-link {
             padding: 0.375rem 0.75rem;
             border: 0.8px solid transparent;
@@ -80,14 +80,22 @@ function addCss() {
             outline: 2px solid #ff3f00;
         }
     `);
+
+    // Specific modifications for BT4G
     if (hostname === bt4gURL && location.pathname === "/search") {
         GM_addStyle(`
             a.magnet-link {
                 vertical-align: top;
             }
         `);
-    }
 
+        // Since there isn't one, add a favicon to make it easier to identify in tabs and history
+        const linkFavicon = document.createElement("link");
+        linkFavicon.rel = "icon";
+        linkFavicon.type = "image/png";
+        linkFavicon.href = "/static/favicon.ico";
+        document.head.appendChild(linkFavicon);
+    }
     if (hostname === bt4gURL) {
         GM_addStyle(`
             .lead {
@@ -679,6 +687,7 @@ function itemFilterBySize() {
 }
 
 async function main() {
+    // automatic reload on server errors
     const ERROR_TITLES = ["Web server is returning an unknown error", "525: SSL handshake failed"];
     if (ERROR_TITLES.some((error) => document.title.includes(error))) {
         const RELOAD_DELAY = 5 * 60 * 1000;
@@ -686,7 +695,7 @@ async function main() {
         return setTimeout(() => location.reload(), RELOAD_DELAY);
     }
 
-    addCss();
+    setStylesAndFavicon();
 
     addMenuCommand();
 
