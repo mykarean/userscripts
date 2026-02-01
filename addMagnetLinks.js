@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            Magnet Links & Torrent Search Filter
 // @description     Adds magnet links to BT4G, Limetorrents, BT1207, filtering of search results by minimum and maximum size (BT4G only), automatic reload in case of server errors every 5 minutes
-// @version         20251128
+// @version         20260202
 // @author          mykarean
 // @match           *://bt4gprx.com/*
 // @match           *://*.limetorrents.fun/search/all/*
@@ -170,9 +170,14 @@ function requestGM_XHR(details) {
 // Register menu command with current state
 function addMenuCommand() {
     const currentState = GM_getValue("includeDN", true);
-    const menuText = `Add Name to Magnet Links ${currentState ? "✔️" : "❌"}`;
+    const menuText = `${currentState ? "✔️" : "❌"} Add Name to Magnet Links`;
 
     GM_registerMenuCommand(menuText, toggleIncludeDN);
+
+    const hoverFetchState = GM_getValue("hoverFetch", false);
+    const hoverFetchMenuText = `${hoverFetchState ? "✔️" : "❌"} Fetch Magnet on Hover`;
+
+    GM_registerMenuCommand(hoverFetchMenuText, toggleHoverFetch);
 }
 
 // Toggle function
@@ -216,6 +221,19 @@ function toggleIncludeDN() {
     GM_setValue("includeDN", newState);
 
     showToast(`Add Name to Magnet Links: ${newState ? "ON" : "OFF"}`);
+
+    // Reload page to apply changes
+    setTimeout(() => {
+        location.reload();
+    }, 2000);
+}
+
+function toggleHoverFetch() {
+    const currentState = GM_getValue("hoverFetch", false);
+    const newState = !currentState;
+    GM_setValue("hoverFetch", newState);
+
+    showToast(`Fetch Magnet on Hover: ${newState ? "ON" : "OFF"}`);
 
     // Reload page to apply changes
     setTimeout(() => {
@@ -282,22 +300,62 @@ function observeNewSearchResults() {
 
 async function processLinksInSearchResults() {
     const links = Array.from(getSearchResultLinks());
-    const promises = links.map(async (link) => {
-        if (hostname === bt4gURL) {
-            // return;
-            await processLinksInSearchResultsBt4g(link);
-        } else if (hostname === limetorrentsURL) {
-            processLinksInSearchResultsLimeTorrents(link);
+    const hoverFetch = GM_getValue("hoverFetch", false);
+
+    if (hoverFetch) {
+        // Add hover event listeners to fetch on hover
+        links.forEach((link) => {
+            // If this is LimeTorrents, process immediately (no fetch used there)
+            if (hostname === limetorrentsURL) {
+                // Ensure we don't re-process
+                if (link.getAttribute("data-magnet-added") !== "true") {
+                    processLinksInSearchResultsLimeTorrents(link);
+                }
+                return;
+            }
+
+            // Skip if listener already added
+            if (link.getAttribute("data-hover-listener") === "true") {
+                return;
+            }
+
+            link.addEventListener("mouseover", async function () {
+                // Skip if already processed
+                if (link.getAttribute("data-magnet-added") === "true") {
+                    return;
+                }
+
+                if (hostname === bt4gURL) {
+                    await processLinksInSearchResultsBt4g(link);
+                } else if (hostname.includes("bt1207")) {
+                    await processLinksInSearchResultsBt1207(link);
+                }
+            }, { once: true });
+
+            link.setAttribute("data-hover-listener", "true");
+        });
+    } else {
+        // Original behavior: fetch all on load
+        const promises = links.map(async (link) => {
+            if (hostname === bt4gURL) {
+                await processLinksInSearchResultsBt4g(link);
+            } else if (hostname === limetorrentsURL) {
+                processLinksInSearchResultsLimeTorrents(link);
+            }
+        });
+
+        await Promise.all(promises);
+
+        if (hostname.includes("bt1207")) {
+            for (let link of links) {
+                await processLinksInSearchResultsBt1207(link);
+            }
         }
-    });
+    }
 
-    await Promise.all(promises);
-
-    if (hostname.includes("bt1207")) {
+    // add magnets on hover for bt1207 if not using general hover fetch
+    if (hostname.includes("bt1207") && !hoverFetch) {
         for (let link of links) {
-            await processLinksInSearchResultsBt1207(link);
-            // await new Promise((resolve) => setTimeout(resolve, 100));
-
             // add magnets on hover
             link.addEventListener("mouseover", async function () {
                 const magnetLink = link.getAttribute("data-magnet-added");
@@ -318,9 +376,11 @@ async function processLinksInSearchResults() {
     }
 
     // Add amount of visible magnet links into text
-    const amountVisibleMagnets = links.length;
+    // Count only magnet links that were actually added
+    const addedMagnetLinks = document.querySelectorAll("a.magnet-link");
+    const amountVisibleMagnets = addedMagnetLinks.length;
     const magnetLinkAllSpan = document.querySelector(".magnet-link-all-span");
-    if (links && typeof links.length === "number" && magnetLinkAllSpan) {
+    if (typeof amountVisibleMagnets === "number" && magnetLinkAllSpan) {
         magnetLinkAllSpan.innerHTML = `Open all <span class="badge bg-primary">${amountVisibleMagnets}</span> loaded magnet links`;
     }
 
