@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            Magnet Links & Torrent Search Filter
 // @description     Adds magnet links to BT4G, Limetorrents, BT1207, filtering of search results by minimum and maximum size (BT4G only), automatic reload in case of server errors every 5 minutes
-// @version         20260202
+// @version         20260207
 // @author          mykarean
 // @match           *://bt4gprx.com/*
 // @match           *://*.limetorrents.fun/search/all/*
@@ -376,9 +376,18 @@ async function processLinksInSearchResults() {
     }
 
     // Add amount of visible magnet links into text
-    // Count only magnet links that were actually added
+    // Count only magnet links that are actually visible (not hidden by filter)
     const addedMagnetLinks = document.querySelectorAll("a.magnet-link");
-    const amountVisibleMagnets = addedMagnetLinks.length;
+    const amountVisibleMagnets = Array.from(addedMagnetLinks).filter((link) => {
+        let current = link;
+        while (current) {
+            if (current.classList.contains("hidden-item")) {
+                return false;
+            }
+            current = current.parentElement;
+        }
+        return true;
+    }).length;
     const magnetLinkAllSpan = document.querySelector(".magnet-link-all-span");
     if (typeof amountVisibleMagnets === "number" && magnetLinkAllSpan) {
         magnetLinkAllSpan.innerHTML = `Open all <span class="badge bg-primary">${amountVisibleMagnets}</span> loaded magnet links`;
@@ -734,6 +743,23 @@ function itemFilterBySize() {
                 }
             }
         });
+
+        // Update the count of visible magnet links
+        const visibleMagnetLinks = document.querySelectorAll("a.magnet-link:not(.hidden-item)");
+        const magnetLinkAllSpan = document.querySelector(".magnet-link-all-span");
+        if (magnetLinkAllSpan) {
+            const count = Array.from(visibleMagnetLinks).filter((link) => {
+                let current = link;
+                while (current) {
+                    if (current.classList.contains("hidden-item")) {
+                        return false;
+                    }
+                    current = current.parentElement;
+                }
+                return true;
+            }).length;
+            magnetLinkAllSpan.innerHTML = `Open all <span class="badge bg-primary">${count}</span> loaded magnet links`;
+        }
     }
 
     // Check if toggle buttons already exist
