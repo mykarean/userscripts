@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            IMDb with additional ratings
 // @description     Adds additional ratings (TMDB, Douban, Metacritic, Rotten Tomatoes, MyAnimeList) to imdb.com for movies and series. These can be activated or deactivated individually in the extension's configuration menu, which is accessible via the Tampermonkey menu. The extension also allows you to copy movie metadata by simply clicking on the runtime below the movie title.
-// @version         20260221
+// @version         20260411
 // @author          mykarean
 // @icon            http://imdb.com/favicon.ico
 // @match           https://*.imdb.com/title/*
@@ -566,22 +566,26 @@ async function getMetacriticData() {
                             ? Number(voteCountText.match(/\d{1,3}(?:,\d{3})*/)[0].replace(/,/g, "")).toLocaleString(local)
                             : 0;
 
+                        if (voteCount === 0) return { rating: 0, voteCount: 0 };
+
                         return { rating, voteCount };
                     };
 
                     const criticRatingElement = result.querySelector(
-                        ".c-siteReviewScore_background-critic_medium .c-siteReviewScore span"
+                        'div[data-testid="global-score-wrapper"]:has(a[href*="critic-reviews"]) span[data-testid="global-score-value"]'
                     );
                     const { rating: criticRating, voteCount: criticVoteCount } = parseRating(
                         criticRatingElement,
-                        '.c-productScoreInfo_scoreContent a[href*="critic-reviews"] span',
+                        'a[data-testid="global-score-review-count-link"][href*="critic-reviews"]',
                         true
                     );
 
-                    const userRatingElement = result.querySelector(".c-siteReviewScore_background-user .c-siteReviewScore span");
+                    const userRatingElement = result.querySelector(
+                        'div[data-testid="global-score-wrapper"]:has(a[href*="user-reviews"]) span[data-testid="global-score-value"]'
+                    );
                     const { rating: userRating, voteCount: userVoteCount } = parseRating(
                         userRatingElement,
-                        '.c-productScoreInfo_scoreContent a[href*="user-reviews"] span',
+                        'a[data-testid="global-score-review-count-link"][href*="user-reviews"]',
                         false
                     );
 
