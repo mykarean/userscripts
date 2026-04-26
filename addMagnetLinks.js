@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            Magnet Links & Torrent Search Filter
 // @description     Adds magnet links to BT4G, Limetorrents, BT1207, filtering of search results by minimum and maximum size (BT4G only), automatic reload in case of server errors every 5 minutes
-// @version         20260207
+// @version         20260427
 // @author          mykarean
 // @match           *://bt4gprx.com/*
 // @match           *://*.limetorrents.fun/search/all/*
@@ -144,7 +144,7 @@ async function requestNativeFetch(url) {
     const response = await fetch(url, {
         credentials: "same-origin",
     });
-    if (!response.ok) throw new Error("Request failed");
+    if (!response.ok) throw new Error(`Request failed: HTTP ${response.status}`);
     return await response.text();
 }
 
@@ -320,17 +320,21 @@ async function processLinksInSearchResults() {
             }
 
             link.addEventListener("mouseover", async function () {
-                // Skip if already processed
-                if (link.getAttribute("data-magnet-added") === "true") {
-                    return;
-                }
+                // Skip if already successfully processed or currently loading
+                if (link.getAttribute("data-magnet-added") === "true") return;
+                if (link.getAttribute("data-magnet-loading") === "true") return;
 
-                if (hostname === bt4gURL) {
-                    await processLinksInSearchResultsBt4g(link);
-                } else if (hostname.includes("bt1207")) {
-                    await processLinksInSearchResultsBt1207(link);
+                link.setAttribute("data-magnet-loading", "true");
+                try {
+                    if (hostname === bt4gURL) {
+                        await processLinksInSearchResultsBt4g(link);
+                    } else if (hostname.includes("bt1207")) {
+                        await processLinksInSearchResultsBt1207(link);
+                    }
+                } finally {
+                    link.removeAttribute("data-magnet-loading");
                 }
-            }, { once: true });
+            });
 
             link.setAttribute("data-hover-listener", "true");
         });
@@ -426,6 +430,18 @@ function getSearchResultLinks() {
     }
 }
 
+async function fetchWithRetry(url, retries = 3, delayMs = 500) {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            return await requestNativeFetch(url);
+        } catch (error) {
+            if (attempt === retries) throw error;
+            console.warn(`Attempt ${attempt} failed (${error.message}), retrying in ${delayMs}ms...`);
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
+    }
+}
+
 async function processLinksInSearchResultsBt4g(link) {
     try {
         // Skip if magnet link exists
@@ -434,7 +450,8 @@ async function processLinksInSearchResultsBt4g(link) {
 
         // Fetch the details page content
         // requestGM_XHR() is not working with Cloudflare protection anymore
-        const html = await requestNativeFetch(link.href);
+        // fetchWithRetry handles transient 404s from BT4G's inconsistent backend servers
+        const html = await fetchWithRetry(link.href);
 
         // Find magnet links
         const parser = new DOMParser();
