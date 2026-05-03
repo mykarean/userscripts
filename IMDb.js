@@ -1,16 +1,18 @@
 // ==UserScript==
 // @name            IMDb with additional ratings
 // @description     Adds additional ratings (TMDB, Douban, Metacritic, Rotten Tomatoes, MyAnimeList) to imdb.com for movies and series. These can be activated or deactivated individually in the extension's configuration menu, which is accessible via the Tampermonkey menu. The extension also allows you to copy movie metadata by simply clicking on the runtime below the movie title.
-// @version         20260411
+// @version         20260502
 // @author          mykarean
 // @icon            http://imdb.com/favicon.ico
 // @match           https://*.imdb.com/title/*
 // @match           https://*.imdb.com/*/title/*
+// @connect         api.themoviedb.org
 // @connect         api.douban.com
 // @connect         wikidata.org
 // @connect         metacritic.com
 // @connect         rottentomatoes.com
 // @connect         jikan.moe
+// @require         https://raw.githubusercontent.com/Tampermonkey/utils/refs/heads/main/requires/gh_2215_make_GM_xhr_more_parallel_again.js
 // @grant           GM_getValue
 // @grant           GM_setValue
 // @grant           GM_addStyle
@@ -32,7 +34,6 @@ const imdbId = window.location.pathname.match(/title\/(tt\d+)/)[1];
 const USER_AGENT = "Mozilla/5.0 (x64; rv) Gecko Firefox";
 const undefinedValue = "X";
 const initialValue = 0;
-let local;
 
 function getTitleElement() {
     return document.querySelector('[data-testid="hero__pageTitle"]');
@@ -41,13 +42,9 @@ function getMainTitle() {
     return getTitleElement()?.textContent;
 }
 function getOriginalTitle() {
-    let originalTitle = document.querySelector('[data-testid="hero__pageTitle"] ~ div')?.textContent?.match(/^.*:\ (.*)/)?.[1];
+    const originalTitle = document.querySelector('[data-testid="hero__pageTitle"] ~ div')?.textContent?.match(/^.*:\ (.*)/)?.[1];
     // Unicode normalisation and removal of diacritical characters to improve search on other pages
     return originalTitle?.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-}
-function getAlsoKnownAsTitle() {
-    let alsoKnownAsTitle = document.querySelector("section[data-testid=Details] li[data-testid=title-details-akas] > div");
-    return alsoKnownAsTitle?.textContent;
 }
 
 GM_registerMenuCommand("Configuration", configurationMenu, "c");
@@ -133,7 +130,8 @@ async function addCss() {
         imdbRatingName.textContent = "IMDb";
     }
 
-    const authorsMode = await GM_getValue("authorsMode2", false);
+    // more compact design for authors mode
+    const authorsMode = await GM_getValue("authorsMode", false);
     if (authorsMode) {
         if (!document.getElementById("authors-custom-css-style")) {
             GM_addStyle(`
@@ -169,7 +167,7 @@ function createRatingBadge(ratingSource) {
         }
     }
 
-    let clonedRatingBadge = ratingElementImdb.cloneNode(true);
+    const clonedRatingBadge = ratingElementImdb.cloneNode(true);
     clonedRatingBadge.setAttribute(ratingSource, "");
     clonedRatingBadge.childNodes[0].innerText = ratingSource;
 
@@ -188,7 +186,7 @@ function createRatingBadge(ratingSource) {
         }
 
         // Critic rating: replace star svg element with critic rating by cloning the rating element
-        let criticRating = clonedRatingBadge
+        const criticRating = clonedRatingBadge
             .querySelector("div[data-testid=hero-rating-bar__aggregate-rating__score]")
             .parentElement.cloneNode(true);
         criticRating.classList.add("critic-rating");
@@ -246,10 +244,10 @@ function updateRatingBadge(newRatingBadge, ratingData) {
         userVoteCount: ".user-rating div[data-testid=hero-rating-bar__aggregate-rating__score] + * + *",
     };
 
-    function updateElement(selector, value, voteCount = 0) {
+    function updateElement(selector, value, isVoteCount = false) {
         const element = newRatingBadge.querySelector(selector);
 
-        if (!voteCount) {
+        if (!isVoteCount) {
             element.textContent = value !== undefined && value !== 0 ? value : undefinedValue;
         } else {
             element.textContent = value !== undefined && value !== 0 ? value : undefinedValue.toLowerCase();
@@ -262,11 +260,11 @@ function updateRatingBadge(newRatingBadge, ratingData) {
     if (ratingData.criticRating !== undefined || ratingData.userRating !== undefined) {
         updateElement(selectors.criticRating, ratingData.criticRating);
         updateElement(selectors.userRating, ratingData.userRating);
-        updateElement(selectors.criticVoteCount, ratingData.criticVoteCount, 1);
-        updateElement(selectors.userVoteCount, ratingData.userVoteCount, 1);
+        updateElement(selectors.criticVoteCount, ratingData.criticVoteCount, true);
+        updateElement(selectors.userVoteCount, ratingData.userVoteCount, true);
     } else {
         updateElement(selectors.generalRating, ratingData.rating);
-        updateElement(selectors.generalVoteCount, ratingData.voteCount, 1);
+        updateElement(selectors.generalVoteCount, ratingData.voteCount, true);
     }
 
     fitTitleToSingleLine();
@@ -277,22 +275,10 @@ function fitTitleToSingleLine() {
     const element = document.querySelector('h1[data-testid="hero__pageTitle"] > span');
     let fontSize = parseFloat(window.getComputedStyle(element).fontSize);
 
-    // if (element.offsetHeight < 68) {
-    //     while (element.offsetHeight < 68 && fontSize < 48) {
-    //         fontSize += 1;
-    //         element.style.fontSize = fontSize + "px";
-    //         if (element.offsetHeight >= 68) {
-    //             fontSize -= 1;
-    //             element.style.fontSize = fontSize + "px";
-    //             break;
-    //         }
-    //     }
-    // } else {
     while (element.offsetHeight >= 58 && fontSize >= 26) {
         fontSize -= 1;
         element.style.fontSize = fontSize + "px";
     }
-    // }
 }
 
 // -----------------------------------------------------------------------------------------------------
@@ -305,10 +291,6 @@ async function getTmdbData() {
     if (!configured) return;
 
     if (tmdbDataPromise) return tmdbDataPromise;
-
-    if (!imdbId) {
-        throw new Error("IMDb ID not found in URL.");
-    }
 
     const options = {
         method: "GET",
@@ -335,22 +317,22 @@ async function getTmdbData() {
             console.log("TMDB: ", result);
             return {
                 source: "TMDB",
-                rating: (Math.round(result.vote_average * 10) / 10).toLocaleString(local, {
+                rating: result.vote_average.toLocaleString(undefined, {
                     minimumFractionDigits: 1,
                     maximumFractionDigits: 1,
                 }),
-                voteCount: result.vote_count?.toLocaleString(local),
+                voteCount: result.vote_count?.toLocaleString(),
                 url: `https://www.themoviedb.org/${result.media_type}/${result.id}`,
             };
         })
         .catch((error) => {
             console.error("Error fetching TMDb data:", error);
-            return Promise.resolve({
+            return {
                 source: "TMDB",
                 rating: initialValue,
                 voteCount: initialValue,
                 url: null,
-            });
+            };
         });
 
     return tmdbDataPromise;
@@ -361,23 +343,14 @@ async function addTmdbRatingBadge() {
     if (!configured) return;
 
     const newRatingBadge = createRatingBadge("TMDB");
-
-    // if the template for the rating badge was not created, it already exists
     if (!newRatingBadge) return;
 
     const ratingData = await getTmdbData();
-
-    // Copy ratingData to avoid modifying the original object
-    let finalRatingData = { ...ratingData };
-
-    // Check if ratingData or ratingData.url is undefined and provide a default value
-    if (!ratingData?.url) {
-        const searchTitle = getOriginalTitle() ?? getMainTitle();
-        const defaultUrl = `https://www.themoviedb.org/search?query=${searchTitle}`;
-        finalRatingData.url = defaultUrl;
-    }
-
-    updateRatingBadge(newRatingBadge, finalRatingData);
+    const searchTitle = getOriginalTitle() ?? getMainTitle();
+    updateRatingBadge(newRatingBadge, {
+        ...ratingData,
+        url: ratingData?.url ?? `https://www.themoviedb.org/search?query=${searchTitle}`,
+    });
 }
 
 // -----------------------------------------------------------------------------------------------------
@@ -390,10 +363,6 @@ async function getDoubanData() {
     if (!configured) return;
 
     if (doubanDataPromise) return doubanDataPromise;
-
-    if (!imdbId) {
-        throw new Error("IMDb ID not found in URL.");
-    }
 
     const fetchFromDouban = (url, method = "GET", data = null) =>
         new Promise((resolve, reject) => {
@@ -419,7 +388,7 @@ async function getDoubanData() {
             });
         });
 
-    const getDoubanInfo = async (imdbId) => {
+    const getDoubanInfo = async () => {
         const data = await fetchFromDouban(
             `https://api.douban.com/v2/movie/imdb/${imdbId}`,
             "POST",
@@ -431,36 +400,36 @@ async function getDoubanData() {
         }
     };
 
-    doubanDataPromise = (async function () {
+    doubanDataPromise = (async () => {
         try {
-            const result = await getDoubanInfo(imdbId);
+            const result = await getDoubanInfo();
             if (!result) {
                 throw new Error("No data found for the provided IMDb ID.");
             }
 
-            let ratingRaw = result.rating.average;
-            let rating =
+            const ratingRaw = result.rating.average;
+            const rating =
                 !isNaN(ratingRaw) && ratingRaw !== ""
-                    ? Number(ratingRaw).toLocaleString(local, { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+                    ? Number(ratingRaw).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })
                     : 0;
-            let voteCountRaw = result.rating.numRaters;
-            let voteCount = !isNaN(voteCountRaw) && voteCountRaw !== 0 ? Number(voteCountRaw).toLocaleString(local) : 0;
+            const voteCountRaw = result.rating.numRaters;
+            const voteCount = !isNaN(voteCountRaw) && voteCountRaw !== 0 ? Number(voteCountRaw).toLocaleString() : 0;
 
             console.log("Douban: ", result);
             return {
                 source: "Douban",
-                rating: rating,
-                voteCount: voteCount,
+                rating,
+                voteCount,
                 url: result.url,
             };
         } catch (error) {
             console.error("Error fetching Douban data:", error);
-            return Promise.resolve({
+            return {
                 source: "Douban",
                 rating: initialValue,
                 voteCount: initialValue,
                 url: null,
-            });
+            };
         }
     })();
 
@@ -472,23 +441,54 @@ async function addDoubanRatingBadge() {
     if (!configured) return;
 
     const newRatingBadge = createRatingBadge("Douban");
-
-    // if the template for the rating badge was not created, it already exists
     if (!newRatingBadge) return;
 
     const ratingData = await getDoubanData();
+    const searchTitle = getOriginalTitle() ?? getMainTitle();
+    updateRatingBadge(newRatingBadge, {
+        ...ratingData,
+        url: ratingData?.url ?? `https://search.douban.com/movie/subject_search?search_text=${searchTitle}`,
+    });
+}
 
-    // Copy ratingData to avoid modifying the original object
-    let finalRatingData = { ...ratingData };
+// -----------------------------------------------------------------------------------------------------
+// Wikidata (shared)
+// -----------------------------------------------------------------------------------------------------
 
-    // Check if ratingData or ratingData.url is undefined and provide a default value
-    if (!ratingData?.url) {
-        const searchTitle = getOriginalTitle() ?? getMainTitle();
-        const defaultUrl = `https://search.douban.com/movie/subject_search?search_text=${searchTitle}`;
-        finalRatingData.url = defaultUrl;
-    }
+let wikidataPromise = null;
+function getWikidataIds() {
+    if (wikidataPromise) return wikidataPromise;
 
-    updateRatingBadge(newRatingBadge, finalRatingData);
+    wikidataPromise = new Promise((resolve, reject) => {
+        GM_xmlhttpRequest({
+            method: "GET",
+            timeout: 10000,
+            headers: { "User-Agent": USER_AGENT },
+            url: `https://query.wikidata.org/sparql?format=json&query=SELECT * WHERE {?s wdt:P345 "${imdbId}". OPTIONAL { ?s wdt:P1712 ?Metacritic_ID. } OPTIONAL { ?s wdt:P1258 ?RottenTomatoes_ID. } OPTIONAL { ?s wdt:P4086 ?MyAnimeList_ID. }}`,
+            onload: function (response) {
+                const bindings = JSON.parse(response.responseText).results.bindings[0] || {};
+                resolve({
+                    metacriticId: bindings.Metacritic_ID?.value ?? "",
+                    rottenTomatoesId: bindings.RottenTomatoes_ID?.value ?? "",
+                    myAnimeListId: bindings.MyAnimeList_ID?.value ?? "",
+                });
+            },
+            onerror: function () {
+                console.error("getWikidataIds: Request Error.");
+                reject("Request Error");
+            },
+            onabort: function () {
+                console.error("getWikidataIds: Request Aborted.");
+                reject("Request Abort");
+            },
+            ontimeout: function () {
+                console.error("getWikidataIds: Request Timeout.");
+                reject("Request Timeout");
+            },
+        });
+    });
+
+    return wikidataPromise;
 }
 
 // -----------------------------------------------------------------------------------------------------
@@ -502,39 +502,6 @@ async function getMetacriticData() {
     if (!configured) return;
 
     if (metacriticDataPromise) return metacriticDataPromise;
-
-    if (!imdbId) {
-        throw new Error("IMDb ID not found in URL.");
-    }
-
-    async function getMetacriticId() {
-        return new Promise((resolve) => {
-            GM_xmlhttpRequest({
-                method: "GET",
-                timeout: 10000,
-                headers: { "User-Agent": USER_AGENT },
-                url: `https://query.wikidata.org/sparql?format=json&query=SELECT * WHERE {?s wdt:P345 "${imdbId}". OPTIONAL { ?s wdt:P1712 ?Metacritic_ID. }}`,
-                onload: function (response) {
-                    const result = JSON.parse(response.responseText);
-                    const bindings = result.results.bindings[0];
-                    const metacriticId = bindings && bindings.Metacritic_ID ? bindings.Metacritic_ID.value : "";
-                    resolve(metacriticId);
-                },
-                onerror: function () {
-                    console.error("getMetacriticId: Request Error.");
-                    reject("Request Error");
-                },
-                onabort: function () {
-                    console.error("getMetacriticId: Request Aborted.");
-                    reject("Request Abort");
-                },
-                ontimeout: function () {
-                    console.error("getMetacriticId: Request Timeout.");
-                    reject("Request Timeout");
-                },
-            });
-        });
-    }
 
     function fetchMetacriticData(url) {
         return new Promise((resolve, reject) => {
@@ -558,12 +525,12 @@ async function getMetacriticData() {
 
                         // no fractions for 10 and 0
                         if (rating !== 10 && rating !== 0) {
-                            rating = rating.toLocaleString(local, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+                            rating = rating.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
                         }
 
                         const voteCountText = result.querySelector(voteSelector)?.textContent;
                         const voteCount = voteCountText
-                            ? Number(voteCountText.match(/\d{1,3}(?:,\d{3})*/)[0].replace(/,/g, "")).toLocaleString(local)
+                            ? Number(voteCountText.match(/\d{1,3}(?:,\d{3})*/)[0].replace(/,/g, "")).toLocaleString()
                             : 0;
 
                         if (voteCount === 0) return { rating: 0, voteCount: 0 };
@@ -620,20 +587,20 @@ async function getMetacriticData() {
     }
 
     metacriticDataPromise = (async () => {
-        const metacriticId = await getMetacriticId();
+        const { metacriticId } = await getWikidataIds();
         const url = encodeURI(`https://www.metacritic.com/${metacriticId}`);
 
         if (metacriticId !== "") {
             return fetchMetacriticData(url);
         } else {
-            return Promise.resolve({
+            return {
                 source: "Metacritic",
                 criticRating: initialValue,
                 userRating: initialValue,
                 criticVoteCount: initialValue,
                 userVoteCount: initialValue,
                 url: null,
-            });
+            };
         }
     })();
 
@@ -645,23 +612,14 @@ async function addMetacriticRatingBadge() {
     if (!configured) return;
 
     const newRatingBadge = createRatingBadge("Metacritic");
-
-    // if the template for the rating badge was not created, it already exists
     if (!newRatingBadge) return;
 
     const ratingData = await getMetacriticData();
-
-    // Copy ratingData to avoid modifying the original object
-    let finalRatingData = { ...ratingData };
-
-    // Check if ratingData or ratingData.url is undefined and provide a default value
-    if (!ratingData?.url) {
-        const searchTitle = getOriginalTitle() ?? getMainTitle();
-        const defaultUrl = `https://www.metacritic.com/search/${searchTitle}`;
-        finalRatingData.url = defaultUrl;
-    }
-
-    updateRatingBadge(newRatingBadge, finalRatingData);
+    const searchTitle = getOriginalTitle() ?? getMainTitle();
+    updateRatingBadge(newRatingBadge, {
+        ...ratingData,
+        url: ratingData?.url ?? `https://www.metacritic.com/search/${searchTitle}`,
+    });
 }
 
 // -----------------------------------------------------------------------------------------------------
@@ -675,39 +633,6 @@ async function getRottenTomatoesData() {
     if (!configured) return;
 
     if (rottenTomatoesDataPromise) return rottenTomatoesDataPromise;
-
-    if (!imdbId) {
-        throw new Error("IMDb ID not found in URL.");
-    }
-
-    async function getRottenTomatoesId() {
-        return new Promise((resolve) => {
-            GM_xmlhttpRequest({
-                method: "GET",
-                timeout: 10000,
-                headers: { "User-Agent": USER_AGENT },
-                url: `https://query.wikidata.org/sparql?format=json&query=SELECT * WHERE {?s wdt:P345 "${imdbId}". OPTIONAL { ?s wdt:P1258 ?RottenTomatoes_ID. }}`,
-                onload: function (response) {
-                    const result = JSON.parse(response.responseText);
-                    const bindings = result.results.bindings[0];
-                    const rottenTomatoesId = bindings && bindings.RottenTomatoes_ID ? bindings.RottenTomatoes_ID.value : "";
-                    resolve(rottenTomatoesId);
-                },
-                onerror: function () {
-                    console.error("getRottenTomatoesId: Request Error.");
-                    reject("Request Error");
-                },
-                onabort: function () {
-                    console.error("getRottenTomatoesId: Request Aborted.");
-                    reject("Request Abort");
-                },
-                ontimeout: function () {
-                    console.error("getRottenTomatoesId: Request Timeout.");
-                    reject("Request Timeout");
-                },
-            });
-        });
-    }
 
     function fetchRottenTomatoesData(url) {
         return new Promise((resolve, reject) => {
@@ -727,12 +652,12 @@ async function getRottenTomatoesData() {
                         // no fractions for 10 and 0
                         return rating === 10 || rating === 0
                             ? rating
-                            : rating.toLocaleString(local, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+                            : rating.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
                     };
 
                     const formatVoteCount = (rawCount) => {
                         if (!rawCount) return 0;
-                        const formattedCount = Number(String(rawCount).replace(/[^\d]/g, "")).toLocaleString(local);
+                        const formattedCount = Number(String(rawCount).replace(/[^\d]/g, "")).toLocaleString();
                         return String(rawCount).includes("+") ? `${formattedCount}+` : formattedCount;
                     };
 
@@ -741,18 +666,7 @@ async function getRottenTomatoesData() {
                     const criticVoteCount = criticRating !== 0 ? formatVoteCount(ratingData.criticsScore.ratingCount) : 0;
                     const userVoteCount = userRating !== 0 ? formatVoteCount(ratingData.audienceScore.bandedRatingCount) : 0;
 
-                    console.log(
-                        "Critic rating: " +
-                            criticRating +
-                            ", User rating: " +
-                            userRating +
-                            ", criticVoteCount: " +
-                            criticVoteCount +
-                            ", userVoteCount: " +
-                            userVoteCount +
-                            ", Url: " +
-                            url
-                    );
+                    console.log(`Critic rating: ${criticRating}, User rating: ${userRating}, criticVoteCount: ${criticVoteCount}, userVoteCount: ${userVoteCount}, Url: ${url}`);
 
                     resolve({
                         source: "RottenTomatoes",
@@ -780,20 +694,20 @@ async function getRottenTomatoesData() {
     }
 
     rottenTomatoesDataPromise = (async () => {
-        const rottenTomatoesId = await getRottenTomatoesId();
+        const { rottenTomatoesId } = await getWikidataIds();
         const url = encodeURI(`https://www.rottentomatoes.com/${rottenTomatoesId}`);
 
         if (rottenTomatoesId !== "") {
             return fetchRottenTomatoesData(url);
         } else {
-            return Promise.resolve({
+            return {
                 source: "RottenTomatoes",
                 criticRating: initialValue,
                 userRating: initialValue,
                 criticVoteCount: initialValue,
                 userVoteCount: initialValue,
                 url: null,
-            });
+            };
         }
     })();
 
@@ -805,23 +719,14 @@ async function addRottenTomatoesRatingBadge() {
     if (!configured) return;
 
     const newRatingBadge = createRatingBadge("RottenTomatoes");
-
-    // if the template for the rating badge was not created, it already exists
     if (!newRatingBadge) return;
 
     const ratingData = await getRottenTomatoesData();
-
-    // Copy ratingData to avoid modifying the original object
-    let finalRatingData = { ...ratingData };
-
-    // Check if ratingData or ratingData.url is undefined and provide a default value
-    if (!ratingData?.url) {
-        const searchTitle = getOriginalTitle() ?? getMainTitle();
-        const defaultUrl = `https://www.rottentomatoes.com/search?search=${searchTitle}`;
-        finalRatingData.url = defaultUrl;
-    }
-
-    updateRatingBadge(newRatingBadge, finalRatingData);
+    const searchTitle = getOriginalTitle() ?? getMainTitle();
+    updateRatingBadge(newRatingBadge, {
+        ...ratingData,
+        url: ratingData?.url ?? `https://www.rottentomatoes.com/search?search=${searchTitle}`,
+    });
 }
 
 // -----------------------------------------------------------------------------------------------------
@@ -836,57 +741,11 @@ async function getMyAnimeListDataByImdbId() {
 
     // only if genre is anime
     const genreAnime = document.querySelector(".ipc-chip-list__scroller")?.textContent.includes("Anime");
-    if (!genreAnime) return Promise.resolve(null);
+    if (!genreAnime) return null;
 
     // only if enabled in settings
     const configured = await GM_getValue("MyAnimeList", true);
-    if (!configured) return Promise.resolve(null);
-
-    function getAnimeID() {
-        const url = `https://query.wikidata.org/sparql?format=json&query=SELECT * WHERE {?s wdt:P345 "${imdbId}". OPTIONAL {?s wdt:P4086 ?MyAnimeList_ID.} OPTIONAL {?s wdt:P8729 ?AniList_ID.}}`;
-
-        return new Promise((resolve) => {
-            GM_xmlhttpRequest({
-                method: "GET",
-                timeout: 10000,
-                url: url,
-                headers: { "User-Agent": USER_AGENT },
-                onload: function (response) {
-                    const result = JSON.parse(response.responseText);
-                    let myAnimeListId = "";
-                    let aniListId = "";
-
-                    if (result.results.bindings[0] !== undefined) {
-                        if (result.results.bindings[0].MyAnimeList_ID !== undefined) {
-                            myAnimeListId = result.results.bindings[0].MyAnimeList_ID.value;
-                        } else {
-                            console.log("getMyAnimeListDataByImdbId: No MyAnimeList_ID found on wikidata.org");
-                        }
-                        if (result.results.bindings[0].AniList_ID !== undefined) {
-                            aniListId = result.results.bindings[0].AniList_ID.value;
-                        }
-                        // console.log("getMyAnimeListDataByImdbId: ", result.results);
-                        resolve([myAnimeListId, aniListId]);
-                    } else {
-                        console.log("getMyAnimeListDataByImdbId: No results found on wikidata.org");
-                        resolve([myAnimeListId, aniListId]);
-                    }
-                },
-                onerror: function () {
-                    console.log("getMyAnimeListDataByImdbId: Request Error.");
-                    reject("Request Error");
-                },
-                onabort: function () {
-                    console.log("getMyAnimeListDataByImdbId: Request Abort.");
-                    reject("Request Abort");
-                },
-                ontimeout: function () {
-                    console.log("getMyAnimeListDataByImdbId: Request Timeout.");
-                    reject("Request Timeout");
-                },
-            });
-        });
-    }
+    if (!configured) return null;
 
     function fetchMyAnimeListData(myAnimeListId) {
         return new Promise((resolve, reject) => {
@@ -905,8 +764,8 @@ async function getMyAnimeListDataByImdbId() {
 
                             resolve({
                                 source: "MyAnimeList",
-                                rating: Number(rating).toLocaleString(local, { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
-                                voteCount: result.data.scored_by?.toLocaleString(local),
+                                rating: Number(rating).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+                                voteCount: result.data.scored_by?.toLocaleString(),
                                 url: result.data.url,
                             });
                         } else {
@@ -934,9 +793,7 @@ async function getMyAnimeListDataByImdbId() {
     }
 
     myAnimeListDataByImdbIdPromise = (async () => {
-        const id = await getAnimeID();
-        const myAnimeListId = id[0];
-        const aniListId = id[1];
+        const { myAnimeListId } = await getWikidataIds();
 
         if (myAnimeListId !== "") {
             return fetchMyAnimeListData(myAnimeListId);
@@ -954,11 +811,11 @@ async function getMyAnimeListDataByTitle() {
     if (myAnimeListDataByTitlePromise) return myAnimeListDataByTitlePromise;
 
     const titleElement = getTitleElement();
-    if (!titleElement) return Promise.resolve(null);
+    if (!titleElement) return null;
 
     // only if genre is anime
     const genreAnime = document.querySelector(".ipc-chip-list__scroller")?.textContent.includes("Anime");
-    if (!genreAnime) return Promise.resolve(null);
+    if (!genreAnime) return null;
 
     const mainTitle = getMainTitle();
     const originalTitle = getOriginalTitle();
@@ -1027,11 +884,8 @@ async function getMyAnimeListDataByTitle() {
             }
         }
 
-        // for debug information
-        // console.log(searchTitle, year, type, allResults);
-
+        const normalizedSearchTitle = normalizeSearchString(searchTitle);
         const result = allResults.find((anime, index) => {
-            const normalizedSearchTitle = normalizeSearchString(searchTitle);
             const normalizedAnimeTitle = normalizeSearchString(anime.title);
             console.log(`Normalized Search Title: "${normalizedSearchTitle}"`);
             console.log(`Normalized Anime Title: "${normalizedAnimeTitle}"`);
@@ -1103,24 +957,20 @@ async function getMyAnimeListDataByTitle() {
         const anime = await getAnimeData();
 
         if (anime) {
-            const data = {
+            return {
                 source: "MyAnimeList",
-                rating: Number(anime.score).toLocaleString(local, { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
-                voteCount: anime.scored_by?.toLocaleString(local),
+                rating: Number(anime.score).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+                voteCount: anime.scored_by?.toLocaleString(),
                 url: anime.url,
             };
-
-            // console.log("myAnimeListDataByTitlePromise: ", data);
-
-            return data;
         } else {
             console.log("No anime data found.");
-            return Promise.resolve({
+            return {
                 source: "MyAnimeList",
                 rating: initialValue,
                 voteCount: initialValue,
                 url: null,
-            });
+            };
         }
     })();
 
@@ -1137,38 +987,26 @@ async function addMyAnimeListRatingBadge() {
     if (!configured) return;
 
     const newRatingBadge = createRatingBadge("MyAnimeList");
-
-    // if the template for the rating badge was not created, it already exists
     if (!newRatingBadge) return;
 
-    let ratingData = await getMyAnimeListDataByImdbId();
-    if (ratingData === null) {
-        ratingData = await getMyAnimeListDataByTitle();
-    }
-
-    // Copy ratingData to avoid modifying the original object
-    let finalRatingData = { ...ratingData };
-
-    // Check if ratingData or ratingData.url is undefined and provide a default value
-    if (!ratingData?.url) {
-        const searchTitle = getOriginalTitle() ?? getMainTitle();
-        const defaultUrl = `https://myanimelist.net/anime.php?q=${searchTitle}`;
-        finalRatingData.url = defaultUrl;
-    }
-
-    updateRatingBadge(newRatingBadge, finalRatingData);
+    const ratingData = (await getMyAnimeListDataByImdbId()) ?? (await getMyAnimeListDataByTitle());
+    const searchTitle = getOriginalTitle() ?? getMainTitle();
+    updateRatingBadge(newRatingBadge, {
+        ...ratingData,
+        url: ratingData?.url ?? `https://myanimelist.net/anime.php?q=${searchTitle}`,
+    });
 }
 
 // -----------------------------------------------------------------------------------------------------
 
 let metadataAsText = "";
 function collectMetadataForClipboard() {
-    let title = document.querySelector("span.hero__primary-text")?.textContent;
-    let genres = document.querySelector("div[data-testid='interests'] div.ipc-chip-list__scroller")?.childNodes;
-    let additionalMetadataRuntime = document
+    const title = document.querySelector("span.hero__primary-text")?.textContent;
+    const genres = document.querySelector("div[data-testid='interests'] div.ipc-chip-list__scroller")?.childNodes;
+    const additionalMetadataRuntime = document
         .querySelector('[data-testid="hero__pageTitle"]')
         ?.parentElement?.querySelector("ul li:last-of-type");
-    let additionalMetadata = document.querySelector('[data-testid="hero__pageTitle"]')?.parentElement?.querySelectorAll("ul > li");
+    const additionalMetadata = document.querySelector('[data-testid="hero__pageTitle"]')?.parentElement?.querySelectorAll("ul > li");
 
     // if click listener does not exist
     if (!document.querySelector(".collectMetadataForClipboardListener") && title) {
@@ -1190,7 +1028,6 @@ function collectMetadataForClipboard() {
 
             additionalMetadataRuntime.style.cursor = "pointer";
             additionalMetadataRuntime.addEventListener("click", function () {
-                console.log("test");
                 navigator.clipboard.writeText(metadataAsText);
             });
 
@@ -1323,11 +1160,6 @@ async function main() {
     // ignore episode view
     if (!document.title.includes('"')) {
         addCss();
-        // getTmdbData();
-        // getDoubanData();
-        // getMetacriticData();
-        // getMyAnimeListDataByImdbId();
-        // getRottenTomatoesData();
 
         const observer = new MutationObserver(async () => {
             // ignore video games
@@ -1345,11 +1177,13 @@ async function main() {
             ) {
                 // make sure CSS is not removed from DOM
                 addCss();
-                await addMyAnimeListRatingBadge();
-                await addRottenTomatoesRatingBadge();
-                await addMetacriticRatingBadge();
-                await addDoubanRatingBadge();
-                await addTmdbRatingBadge();
+                await Promise.all([
+                    addMyAnimeListRatingBadge(),
+                    addRottenTomatoesRatingBadge(),
+                    addMetacriticRatingBadge(),
+                    addDoubanRatingBadge(),
+                    addTmdbRatingBadge(),
+                ]);
 
                 collectMetadataForClipboard();
             }
