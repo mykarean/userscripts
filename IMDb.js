@@ -50,6 +50,7 @@ GM_registerMenuCommand("Configuration", configurationMenu, "c");
 
 // Apply GM_xmlhttpRequest wrapper to fix redirect handling in background requests (thumbnail search, prefetch) without affecting page scripts. Requires Tampermonkey 5.3.2+ for redirect control support.
 (() => {
+    // https://github.com/Tampermonkey/tampermonkey/issues/2215
     /* global GM_info, GM_xmlhttpRequest, GM */
 
     const HAS_GM = typeof GM !== "undefined";
