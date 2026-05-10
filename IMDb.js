@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            IMDb with additional ratings
 // @description     Adds additional ratings (TMDB, Douban, Metacritic, Rotten Tomatoes, MyAnimeList) to imdb.com for movies and series. These can be activated or deactivated individually in the extension's configuration menu, which is accessible via the Tampermonkey menu. The extension also allows you to copy movie metadata by simply clicking on the runtime below the movie title.
-// @version         20260503
+// @version         20260510
 // @author          mykarean
 // @icon            http://imdb.com/favicon.ico
 // @match           https://*.imdb.com/title/*
@@ -33,6 +33,9 @@ const imdbId = window.location.pathname.match(/title\/(tt\d+)/)[1];
 const USER_AGENT = "Mozilla/5.0 (x64; rv) Gecko Firefox";
 const undefinedValue = "X";
 const initialValue = 0;
+
+// Timeout configuration for GM_xmlhttpRequest (in milliseconds)
+const TIMEOUT_GM_XMLHTTP_REQUEST = 50000;
 
 function getTitleElement() {
     return document.querySelector('[data-testid="hero__pageTitle"]');
@@ -267,6 +270,31 @@ async function addCss() {
                 background: unset !important;
             }
 
+            /* notification bubbles */
+            span.rating-bar__base-button {
+                position: relative;
+            }
+            .rating-badge-error,
+            .rating-badge-warning {
+                position: absolute;
+                top: -5px;
+                right: -5px;
+                width: 14px;
+                height: 14px;
+                border-radius: 50%;
+                font-size: 9px;
+                font-weight: bold;
+                color: white;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: help;
+                z-index: 1;
+                line-height: 1;
+            }
+            .rating-badge-error { background-color: #c0392b; }
+            .rating-badge-warning { background-color: #e67e22; }
+
             /* title if line break */
             span.hero__primary-text {
                 line-height: 40px;
@@ -321,8 +349,9 @@ function createRatingBadge(ratingSource) {
     clonedRatingBadge.childNodes[0].innerText = ratingSource;
 
     // disable link per default
-    clonedRatingBadge.querySelector("a").removeAttribute("href");
-    clonedRatingBadge.querySelector("a").classList.add("disabled-anchor");
+    const clonedAnchor = clonedRatingBadge.querySelector("a");
+    clonedAnchor.removeAttribute("href");
+    clonedAnchor.classList.add("disabled-anchor");
 
     if (ratingSource === "Metacritic" || ratingSource === "RottenTomatoes") {
         const criticRatingElement = clonedRatingBadge.querySelector(
@@ -331,17 +360,13 @@ function createRatingBadge(ratingSource) {
 
         if (!criticRatingElement) {
             console.error("Critic rating element not found");
-            return;
+            return null;
         }
 
         // Critic rating: replace star svg element with critic rating by cloning the rating element
-        const criticRating = clonedRatingBadge
-            .querySelector("div[data-testid=hero-rating-bar__aggregate-rating__score]")
-            .parentElement.cloneNode(true);
+        const criticRating = criticRatingElement.cloneNode(true);
         criticRating.classList.add("critic-rating");
-        clonedRatingBadge
-            .querySelector("div[data-testid=hero-rating-bar__aggregate-rating__score]")
-            .parentElement.classList.add("user-rating");
+        criticRatingElement.classList.add("user-rating");
 
         //  critic rating
         updateRatingElement(criticRating, initialValue, initialValue);
@@ -372,6 +397,8 @@ function createRatingBadge(ratingSource) {
     // transfer the content of the cloned IMDb rating element to the new span element
     ratingElement.innerHTML = clonedRatingBadge.innerHTML;
 
+    ratingElement.querySelector("a").style.opacity = "0.4";
+
     ratingElementImdb.insertAdjacentElement("beforebegin", ratingElement);
 
     fitTitleToSingleLine();
@@ -379,19 +406,54 @@ function createRatingBadge(ratingSource) {
     return ratingElement;
 }
 
+function addErrorBubble(badge, message) {
+    if (badge.querySelector(".rating-badge-error")) return;
+    const bubble = document.createElement("span");
+    bubble.className = "rating-badge-error";
+    bubble.textContent = "!";
+    bubble.title = message || "Error";
+    badge.appendChild(bubble);
+}
+
+function addWarningBubble(badge, message) {
+    if (badge.querySelector(".rating-badge-warning")) return;
+    const bubble = document.createElement("span");
+    bubble.className = "rating-badge-warning";
+    bubble.textContent = "!";
+    bubble.title = message || "Warning";
+    badge.appendChild(bubble);
+}
+
+function gmErrorHandlers(reject, label) {
+    return {
+        onerror:   () => { console.error(`${label}: Request Error.`);     reject("Request Error"); },
+        onabort:   () => { console.error(`${label}: Request Aborted.`);   reject("Request Aborted"); },
+        ontimeout: () => { console.error(`${label}: Request Timed Out.`); reject("Request Timed Out"); },
+    };
+}
+
+const badgeSelectors = {
+    url: "a",
+    generalRating: "div[data-testid=hero-rating-bar__aggregate-rating__score] > span",
+    generalVoteCount: "div[data-testid=hero-rating-bar__aggregate-rating__score] + * + *",
+    criticRating: ".critic-rating div[data-testid=hero-rating-bar__aggregate-rating__score] > span",
+    criticVoteCount: ".critic-rating div[data-testid=hero-rating-bar__aggregate-rating__score] + * + *",
+    userRating: ".user-rating div[data-testid=hero-rating-bar__aggregate-rating__score] > span",
+    userVoteCount: ".user-rating div[data-testid=hero-rating-bar__aggregate-rating__score] + * + *",
+};
+
 // update the rating template with actual data
 function updateRatingBadge(newRatingBadge, ratingData) {
     if (!newRatingBadge || !ratingData) return;
 
-    const selectors = {
-        url: "a",
-        generalRating: "div[data-testid=hero-rating-bar__aggregate-rating__score] > span",
-        generalVoteCount: "div[data-testid=hero-rating-bar__aggregate-rating__score] + * + *",
-        criticRating: ".critic-rating div[data-testid=hero-rating-bar__aggregate-rating__score] > span",
-        criticVoteCount: ".critic-rating div[data-testid=hero-rating-bar__aggregate-rating__score] + * + *",
-        userRating: ".user-rating div[data-testid=hero-rating-bar__aggregate-rating__score] > span",
-        userVoteCount: ".user-rating div[data-testid=hero-rating-bar__aggregate-rating__score] + * + *",
-    };
+    newRatingBadge.querySelector("a").style.opacity = "1";
+
+    if (ratingData.error && !ratingData.source) {
+        newRatingBadge.querySelectorAll(badgeSelectors.generalRating).forEach(el => el.textContent = undefinedValue);
+        newRatingBadge.querySelectorAll(badgeSelectors.generalVoteCount).forEach(el => el.textContent = undefinedValue.toLowerCase());
+        addErrorBubble(newRatingBadge, ratingData.error);
+        return;
+    }
 
     function updateElement(selector, value, isVoteCount = false) {
         const element = newRatingBadge.querySelector(selector);
@@ -403,18 +465,21 @@ function updateRatingBadge(newRatingBadge, ratingData) {
         }
     }
 
-    newRatingBadge.querySelector(selectors.url).href = ratingData.url;
-    newRatingBadge.querySelector(selectors.url).classList.remove("disabled-anchor");
+    const anchor = newRatingBadge.querySelector(badgeSelectors.url);
+    anchor.href = ratingData.url;
+    anchor.classList.remove("disabled-anchor");
 
     if (ratingData.criticRating !== undefined || ratingData.userRating !== undefined) {
-        updateElement(selectors.criticRating, ratingData.criticRating);
-        updateElement(selectors.userRating, ratingData.userRating);
-        updateElement(selectors.criticVoteCount, ratingData.criticVoteCount, true);
-        updateElement(selectors.userVoteCount, ratingData.userVoteCount, true);
+        updateElement(badgeSelectors.criticRating, ratingData.criticRating);
+        updateElement(badgeSelectors.userRating, ratingData.userRating);
+        updateElement(badgeSelectors.criticVoteCount, ratingData.criticVoteCount, true);
+        updateElement(badgeSelectors.userVoteCount, ratingData.userVoteCount, true);
     } else {
-        updateElement(selectors.generalRating, ratingData.rating);
-        updateElement(selectors.generalVoteCount, ratingData.voteCount, true);
+        updateElement(badgeSelectors.generalRating, ratingData.rating);
+        updateElement(badgeSelectors.generalVoteCount, ratingData.voteCount, true);
     }
+
+    if (ratingData.error) addErrorBubble(newRatingBadge, ratingData.error);
 
     fitTitleToSingleLine();
 }
@@ -422,11 +487,40 @@ function updateRatingBadge(newRatingBadge, ratingData) {
 // reduce titles font size to avoid line breaks
 function fitTitleToSingleLine() {
     const element = document.querySelector('h1[data-testid="hero__pageTitle"] > span');
+    if (!element) return;
     let fontSize = parseFloat(window.getComputedStyle(element).fontSize);
 
     while (element.offsetHeight >= 58 && fontSize >= 26) {
         fontSize -= 1;
         element.style.fontSize = fontSize + "px";
+    }
+}
+
+async function addRatingBadge(sourceKey, getData, fallbackUrl) {
+    const configured = await GM_getValue(sourceKey, true);
+    if (!configured) return;
+
+    const newRatingBadge = createRatingBadge(sourceKey);
+    if (!newRatingBadge) return;
+
+    const warnTimer = setTimeout(
+        () => addWarningBubble(newRatingBadge, "Taking longer than usual..."),
+        5000
+    );
+
+    try {
+        const ratingData = await getData();
+        clearTimeout(warnTimer);
+        newRatingBadge.querySelector(".rating-badge-warning")?.remove();
+        const searchTitle = getOriginalTitle() ?? getMainTitle();
+        updateRatingBadge(newRatingBadge, {
+            ...ratingData,
+            url: ratingData?.url ?? fallbackUrl(searchTitle),
+        });
+    } catch (e) {
+        clearTimeout(warnTimer);
+        newRatingBadge.querySelector(".rating-badge-warning")?.remove();
+        updateRatingBadge(newRatingBadge, { error: String(e) });
     }
 }
 
@@ -443,6 +537,7 @@ async function getTmdbData() {
 
     const options = {
         method: "GET",
+        signal: AbortSignal.timeout(30000),
         headers: {
             accept: "application/json",
             Authorization:
@@ -460,7 +555,7 @@ async function getTmdbData() {
         .then((data) => {
             const result = data.movie_results[0] || data.tv_results[0];
             if (!result) {
-                throw new Error("No data found for the provided IMDb ID.");
+                return { source: "TMDB", rating: initialValue, voteCount: initialValue, url: null };
             }
 
             console.log("TMDB: ", result);
@@ -481,25 +576,15 @@ async function getTmdbData() {
                 rating: initialValue,
                 voteCount: initialValue,
                 url: null,
+                error: error.message,
             };
         });
 
     return tmdbDataPromise;
 }
 
-async function addTmdbRatingBadge() {
-    const configured = await GM_getValue("TMDB", true);
-    if (!configured) return;
-
-    const newRatingBadge = createRatingBadge("TMDB");
-    if (!newRatingBadge) return;
-
-    const ratingData = await getTmdbData();
-    const searchTitle = getOriginalTitle() ?? getMainTitle();
-    updateRatingBadge(newRatingBadge, {
-        ...ratingData,
-        url: ratingData?.url ?? `https://www.themoviedb.org/search?query=${searchTitle}`,
-    });
+function addTmdbRatingBadge() {
+    return addRatingBadge("TMDB", getTmdbData, (t) => `https://www.themoviedb.org/search?query=${t}`);
 }
 
 // -----------------------------------------------------------------------------------------------------
@@ -519,21 +604,24 @@ async function getDoubanData() {
                 method,
                 url,
                 data,
+                timeout: TIMEOUT_GM_XMLHTTP_REQUEST,
                 headers: {
                     "Content-Type": "application/x-www-form-urlencoded; charset=utf8",
                 },
                 onload: (response) => {
-                    if (response.status >= 200 && response.status < 400) {
-                        resolve(JSON.parse(response.responseText));
-                    } else {
-                        console.error(`Error getting ${url}:`, response.status, response.statusText, response.responseText);
-                        resolve(null);
+                    try {
+                        if (response.status >= 200 && response.status < 400) {
+                            resolve(JSON.parse(response.responseText));
+                        } else {
+                            console.error(`Error getting ${url}:`, response.status, response.statusText);
+                            resolve(null);
+                        }
+                    } catch (e) {
+                        console.error(`Parse error for ${url}:`, e);
+                        reject("Parse error");
                     }
                 },
-                onerror: (error) => {
-                    console.error(`Error during GM_xmlhttpRequest to ${url}:`, error.statusText);
-                    reject(error);
-                },
+                ...gmErrorHandlers(reject, `Douban (${url})`),
             });
         });
 
@@ -553,7 +641,7 @@ async function getDoubanData() {
         try {
             const result = await getDoubanInfo();
             if (!result) {
-                throw new Error("No data found for the provided IMDb ID.");
+                return { source: "Douban", rating: initialValue, voteCount: initialValue, url: null };
             }
 
             const ratingRaw = result.rating.average;
@@ -578,6 +666,7 @@ async function getDoubanData() {
                 rating: initialValue,
                 voteCount: initialValue,
                 url: null,
+                error: error?.message ?? String(error),
             };
         }
     })();
@@ -585,19 +674,8 @@ async function getDoubanData() {
     return doubanDataPromise;
 }
 
-async function addDoubanRatingBadge() {
-    const configured = await GM_getValue("Douban", true);
-    if (!configured) return;
-
-    const newRatingBadge = createRatingBadge("Douban");
-    if (!newRatingBadge) return;
-
-    const ratingData = await getDoubanData();
-    const searchTitle = getOriginalTitle() ?? getMainTitle();
-    updateRatingBadge(newRatingBadge, {
-        ...ratingData,
-        url: ratingData?.url ?? `https://search.douban.com/movie/subject_search?search_text=${searchTitle}`,
-    });
+function addDoubanRatingBadge() {
+    return addRatingBadge("Douban", getDoubanData, (t) => `https://search.douban.com/movie/subject_search?search_text=${t}`);
 }
 
 // -----------------------------------------------------------------------------------------------------
@@ -611,29 +689,28 @@ function getWikidataIds() {
     wikidataPromise = new Promise((resolve, reject) => {
         GM_xmlhttpRequest({
             method: "GET",
-            timeout: 10000,
+            timeout: TIMEOUT_GM_XMLHTTP_REQUEST,
             headers: { "User-Agent": USER_AGENT },
             url: `https://query.wikidata.org/sparql?format=json&query=SELECT * WHERE {?s wdt:P345 "${imdbId}". OPTIONAL { ?s wdt:P1712 ?Metacritic_ID. } OPTIONAL { ?s wdt:P1258 ?RottenTomatoes_ID. } OPTIONAL { ?s wdt:P4086 ?MyAnimeList_ID. }}`,
             onload: function (response) {
-                const bindings = JSON.parse(response.responseText).results.bindings[0] || {};
-                resolve({
-                    metacriticId: bindings.Metacritic_ID?.value ?? "",
-                    rottenTomatoesId: bindings.RottenTomatoes_ID?.value ?? "",
-                    myAnimeListId: bindings.MyAnimeList_ID?.value ?? "",
-                });
+                try {
+                    if (response.status < 200 || response.status >= 300) {
+                        console.error(`getWikidataIds: HTTP ${response.status}`);
+                        reject(`HTTP Error ${response.status}`);
+                        return;
+                    }
+                    const bindings = JSON.parse(response.responseText).results.bindings[0] || {};
+                    resolve({
+                        metacriticId: bindings.Metacritic_ID?.value ?? "",
+                        rottenTomatoesId: bindings.RottenTomatoes_ID?.value ?? "",
+                        myAnimeListId: bindings.MyAnimeList_ID?.value ?? "",
+                    });
+                } catch (e) {
+                    console.error("getWikidataIds: Parse error.", e);
+                    reject("Parse error");
+                }
             },
-            onerror: function () {
-                console.error("getWikidataIds: Request Error.");
-                reject("Request Error");
-            },
-            onabort: function () {
-                console.error("getWikidataIds: Request Aborted.");
-                reject("Request Abort");
-            },
-            ontimeout: function () {
-                console.error("getWikidataIds: Request Timeout.");
-                reject("Request Timeout");
-            },
+            ...gmErrorHandlers(reject, "Wikidata"),
         });
     });
 
@@ -657,80 +734,75 @@ async function getMetacriticData() {
             GM_xmlhttpRequest({
                 method: "GET",
                 url: url,
+                timeout: TIMEOUT_GM_XMLHTTP_REQUEST,
                 headers: { "User-Agent": USER_AGENT },
                 onload: function (response) {
-                    const parser = new DOMParser();
-                    const result = parser.parseFromString(response.responseText, "text/html");
+                    try {
+                        const parser = new DOMParser();
+                        const result = parser.parseFromString(response.responseText, "text/html");
 
-                    const parseRating = (ratingElement, voteSelector, divideByTen = false) => {
-                        if (!ratingElement) return { rating: 0, voteCount: 0 };
+                        const parseRating = (ratingElement, voteSelector, divideByTen = false) => {
+                            if (!ratingElement) return { rating: 0, voteCount: 0 };
 
-                        let ratingText = ratingElement.textContent.trim();
-                        let rating = !isNaN(ratingText) ? Number(ratingText) : 0;
+                            let ratingText = ratingElement.textContent.trim();
+                            let rating = !isNaN(ratingText) ? Number(ratingText) : 0;
 
-                        if (divideByTen) {
-                            rating = rating / 10;
-                        }
+                            if (divideByTen) {
+                                rating = rating / 10;
+                            }
 
-                        // no fractions for 10 and 0
-                        if (rating !== 10 && rating !== 0) {
-                            rating = rating.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-                        }
+                            // no fractions for 10 and 0
+                            if (rating !== 10 && rating !== 0) {
+                                rating = rating.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+                            }
 
-                        const voteCountText = result.querySelector(voteSelector)?.textContent;
-                        const voteCount = voteCountText
-                            ? Number(voteCountText.match(/\d{1,3}(?:,\d{3})*/)[0].replace(/,/g, "")).toLocaleString()
-                            : 0;
+                            const voteCountText = result.querySelector(voteSelector)?.textContent;
+                            const voteCount = voteCountText
+                                ? Number(voteCountText.match(/\d{1,3}(?:,\d{3})*/)[0].replace(/,/g, "")).toLocaleString()
+                                : 0;
 
-                        if (voteCount === 0) return { rating: 0, voteCount: 0 };
+                            if (voteCount === 0) return { rating: 0, voteCount: 0 };
 
-                        return { rating, voteCount };
-                    };
+                            return { rating, voteCount };
+                        };
 
-                    const criticRatingElement = result.querySelector(
-                        'div[data-testid="global-score-wrapper"]:has(a[href*="critic-reviews"]) span[data-testid="global-score-value"]'
-                    );
-                    const { rating: criticRating, voteCount: criticVoteCount } = parseRating(
-                        criticRatingElement,
-                        'a[data-testid="global-score-review-count-link"][href*="critic-reviews"]',
-                        true
-                    );
+                        const criticRatingElement = result.querySelector(
+                            'div[data-testid="global-score-wrapper"]:has(a[href*="critic-reviews"]) span[data-testid="global-score-value"]'
+                        );
+                        const { rating: criticRating, voteCount: criticVoteCount } = parseRating(
+                            criticRatingElement,
+                            'a[data-testid="global-score-review-count-link"][href*="critic-reviews"]',
+                            true
+                        );
 
-                    const userRatingElement = result.querySelector(
-                        'div[data-testid="global-score-wrapper"]:has(a[href*="user-reviews"]) span[data-testid="global-score-value"]'
-                    );
-                    const { rating: userRating, voteCount: userVoteCount } = parseRating(
-                        userRatingElement,
-                        'a[data-testid="global-score-review-count-link"][href*="user-reviews"]',
-                        false
-                    );
+                        const userRatingElement = result.querySelector(
+                            'div[data-testid="global-score-wrapper"]:has(a[href*="user-reviews"]) span[data-testid="global-score-value"]'
+                        );
+                        const { rating: userRating, voteCount: userVoteCount } = parseRating(
+                            userRatingElement,
+                            'a[data-testid="global-score-review-count-link"][href*="user-reviews"]',
+                            false
+                        );
 
-                    console.log(
-                        `Critic rating: ${criticRating}, User rating: ${userRating}, Critic vote count: ${criticVoteCount}, User vote count: ${userVoteCount}, URL: ${url}`
-                    );
+                        console.log(
+                            `Critic rating: ${criticRating}, User rating: ${userRating}, Critic vote count: ${criticVoteCount}, User vote count: ${userVoteCount}, URL: ${url}`
+                        );
 
-                    resolve({
-                        source: "Metacritic",
-                        criticRating,
-                        userRating,
-                        criticVoteCount,
-                        userVoteCount,
-                        url,
-                    });
+                        resolve({
+                            source: "Metacritic",
+                            criticRating,
+                            userRating,
+                            criticVoteCount,
+                            userVoteCount,
+                            url,
+                        });
+                    } catch (e) {
+                        console.error("getMetacriticRatings: Parse error.", e);
+                        reject("Parse error");
+                    }
                 },
 
-                onerror: function () {
-                    console.log("getMetacriticRatings: Request Error.");
-                    reject("Request Error");
-                },
-                onabort: function () {
-                    console.log("getMetacriticRatings: Request is aborted.");
-                    reject("Request Aborted");
-                },
-                ontimeout: function () {
-                    console.log("getMetacriticRatings: Request timed out.");
-                    reject("Request Timed Out");
-                },
+                ...gmErrorHandlers(reject, "Metacritic"),
             });
         });
     }
@@ -756,19 +828,8 @@ async function getMetacriticData() {
     return metacriticDataPromise;
 }
 
-async function addMetacriticRatingBadge() {
-    const configured = await GM_getValue("Metacritic", true);
-    if (!configured) return;
-
-    const newRatingBadge = createRatingBadge("Metacritic");
-    if (!newRatingBadge) return;
-
-    const ratingData = await getMetacriticData();
-    const searchTitle = getOriginalTitle() ?? getMainTitle();
-    updateRatingBadge(newRatingBadge, {
-        ...ratingData,
-        url: ratingData?.url ?? `https://www.metacritic.com/search/${searchTitle}`,
-    });
+function addMetacriticRatingBadge() {
+    return addRatingBadge("Metacritic", getMetacriticData, (t) => `https://www.metacritic.com/search/${t}`);
 }
 
 // -----------------------------------------------------------------------------------------------------
@@ -788,56 +849,51 @@ async function getRottenTomatoesData() {
             GM_xmlhttpRequest({
                 method: "GET",
                 url: url,
+                timeout: TIMEOUT_GM_XMLHTTP_REQUEST,
                 headers: { "User-Agent": USER_AGENT },
                 onload: function (response) {
-                    const parser = new DOMParser();
-                    const result = parser.parseFromString(response.responseText, "text/html");
+                    try {
+                        const parser = new DOMParser();
+                        const result = parser.parseFromString(response.responseText, "text/html");
 
-                    const ratingDataElement = result.getElementById("media-scorecard-json");
-                    const ratingData = JSON.parse(ratingDataElement.textContent);
+                        const ratingDataElement = result.getElementById("media-scorecard-json");
+                        const ratingData = JSON.parse(ratingDataElement.textContent);
 
-                    const formatRating = (rawRating) => {
-                        const rating = !isNaN(rawRating) ? Number(rawRating) / 10 : 0;
-                        // no fractions for 10 and 0
-                        return rating === 10 || rating === 0
-                            ? rating
-                            : rating.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-                    };
+                        const formatRating = (rawRating) => {
+                            const rating = !isNaN(rawRating) ? Number(rawRating) / 10 : 0;
+                            // no fractions for 10 and 0
+                            return rating === 10 || rating === 0
+                                ? rating
+                                : rating.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+                        };
 
-                    const formatVoteCount = (rawCount) => {
-                        if (!rawCount) return 0;
-                        const formattedCount = Number(String(rawCount).replace(/[^\d]/g, "")).toLocaleString();
-                        return String(rawCount).includes("+") ? `${formattedCount}+` : formattedCount;
-                    };
+                        const formatVoteCount = (rawCount) => {
+                            if (!rawCount) return 0;
+                            const formattedCount = Number(String(rawCount).replace(/[^\d]/g, "")).toLocaleString();
+                            return String(rawCount).includes("+") ? `${formattedCount}+` : formattedCount;
+                        };
 
-                    const criticRating = formatRating(ratingData.criticsScore.score);
-                    const userRating = formatRating(ratingData.audienceScore.score);
-                    const criticVoteCount = criticRating !== 0 ? formatVoteCount(ratingData.criticsScore.ratingCount) : 0;
-                    const userVoteCount = userRating !== 0 ? formatVoteCount(ratingData.audienceScore.bandedRatingCount) : 0;
+                        const criticRating = formatRating(ratingData.criticsScore.score);
+                        const userRating = formatRating(ratingData.audienceScore.score);
+                        const criticVoteCount = criticRating !== 0 ? formatVoteCount(ratingData.criticsScore.ratingCount) : 0;
+                        const userVoteCount = userRating !== 0 ? formatVoteCount(ratingData.audienceScore.bandedRatingCount) : 0;
 
-                    console.log(`Critic rating: ${criticRating}, User rating: ${userRating}, criticVoteCount: ${criticVoteCount}, userVoteCount: ${userVoteCount}, Url: ${url}`);
+                        console.log(`Critic rating: ${criticRating}, User rating: ${userRating}, criticVoteCount: ${criticVoteCount}, userVoteCount: ${userVoteCount}, Url: ${url}`);
 
-                    resolve({
-                        source: "RottenTomatoes",
-                        criticRating,
-                        userRating,
-                        criticVoteCount,
-                        userVoteCount,
-                        url,
-                    });
+                        resolve({
+                            source: "RottenTomatoes",
+                            criticRating,
+                            userRating,
+                            criticVoteCount,
+                            userVoteCount,
+                            url,
+                        });
+                    } catch (e) {
+                        console.error("getRottenTomatoesRatings: Parse error.", e);
+                        reject("Parse error");
+                    }
                 },
-                onerror: function () {
-                    console.log("getRottenTomatoesRatings: Request Error.");
-                    reject("Request Error");
-                },
-                onabort: function () {
-                    console.log("getRottenTomatoesRatings: Request is aborted.");
-                    reject("Request Aborted");
-                },
-                ontimeout: function () {
-                    console.log("getRottenTomatoesRatings: Request timed out.");
-                    reject("Request Timed Out");
-                },
+                ...gmErrorHandlers(reject, "RottenTomatoes"),
             });
         });
     }
@@ -863,19 +919,8 @@ async function getRottenTomatoesData() {
     return rottenTomatoesDataPromise;
 }
 
-async function addRottenTomatoesRatingBadge() {
-    const configured = await GM_getValue("RottenTomatoes", true);
-    if (!configured) return;
-
-    const newRatingBadge = createRatingBadge("RottenTomatoes");
-    if (!newRatingBadge) return;
-
-    const ratingData = await getRottenTomatoesData();
-    const searchTitle = getOriginalTitle() ?? getMainTitle();
-    updateRatingBadge(newRatingBadge, {
-        ...ratingData,
-        url: ratingData?.url ?? `https://www.rottentomatoes.com/search?search=${searchTitle}`,
-    });
+function addRottenTomatoesRatingBadge() {
+    return addRatingBadge("RottenTomatoes", getRottenTomatoesData, (t) => `https://www.rottentomatoes.com/search?search=${t}`);
 }
 
 // -----------------------------------------------------------------------------------------------------
@@ -901,16 +946,20 @@ async function getMyAnimeListDataByImdbId() {
             const url = "https://api.jikan.moe/v4/anime/" + myAnimeListId;
             GM_xmlhttpRequest({
                 method: "GET",
-                timeout: 10000,
+                timeout: TIMEOUT_GM_XMLHTTP_REQUEST,
                 url: url,
                 headers: { "User-Agent": USER_AGENT },
                 onload: function (response) {
-                    if (response.status === 200) {
+                    try {
+                        if (response.status !== 200) {
+                            console.error("MyAnimeList: HTTP Error: " + response.status);
+                            reject("HTTP Error " + response.status);
+                            return;
+                        }
                         const result = JSON.parse(response.responseText);
                         const rating = result.data.score;
                         if (!isNaN(rating) && rating > 0) {
                             console.log("getMyAnimeListDataByImdbId: ", result.data.mal_id, result);
-
                             resolve({
                                 source: "MyAnimeList",
                                 rating: Number(rating).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
@@ -920,23 +969,12 @@ async function getMyAnimeListDataByImdbId() {
                         } else {
                             reject("Invalid rating");
                         }
-                    } else {
-                        console.log("MyAnimeList: HTTP Error: " + response.status);
-                        reject("HTTP Error");
+                    } catch (e) {
+                        console.error("MyAnimeList: Parse error.", e);
+                        reject("Parse error");
                     }
                 },
-                onerror: function () {
-                    console.log("MyAnimeList: Request Error.");
-                    reject("Request Error");
-                },
-                onabort: function () {
-                    console.log("MyAnimeList: Request is aborted.");
-                    reject("Request Aborted");
-                },
-                ontimeout: function () {
-                    console.log("MyAnimeList: Request timed out.");
-                    reject("Request Timeout");
-                },
+                ...gmErrorHandlers(reject, "MyAnimeList"),
             });
         });
     }
@@ -952,6 +990,38 @@ async function getMyAnimeListDataByImdbId() {
     })();
 
     return myAnimeListDataByImdbIdPromise;
+}
+
+function normalizeSearchString(string) {
+    return string
+        .replace(/Ô/g, "oo")
+        .replace(/ô/g, "ou")
+        .toLowerCase()
+        .replace(/û/g, "uu")
+        .replace(/[^a-z0-9\s]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+async function fetchWithRetry(url, retries = 0) {
+    const maxRetries = 3;
+    const retryDelay = 1000;
+    try {
+        const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+        if (response.status === 429) {
+            if (retries < maxRetries) {
+                console.log(`Rate limited. Retrying in ${retryDelay / 1000} seconds...`);
+                await new Promise((resolve) => setTimeout(resolve, retryDelay));
+                return fetchWithRetry(url, retries + 1);
+            } else {
+                throw new Error("Max retries reached. Please try again later.");
+            }
+        }
+        return response;
+    } catch (error) {
+        console.error("Fetch error:", error);
+        throw error;
+    }
 }
 
 let myAnimeListDataByTitlePromise = null;
@@ -982,41 +1052,6 @@ async function getMyAnimeListDataByTitle() {
     async function fetchAllPages(searchTitle) {
         let currentPage = 1;
         let allResults = [];
-        const maxRetries = 3;
-        const retryDelay = 1000;
-        const normalizeSearchString = (string) => {
-            return (
-                string
-                    .replace(/Ô/g, "oo")
-                    .replace(/ô/g, "ou")
-                    .toLowerCase()
-                    .replace(/û/g, "uu")
-                    // Removes all characters that are not letters, numbers or spaces
-                    .replace(/[^a-z0-9\s]/g, " ")
-                    // Replaces several consecutive spaces with a single space
-                    .replace(/\s+/g, " ")
-                    .trim()
-            );
-        };
-
-        async function fetchWithRetry(url, retries = 0) {
-            try {
-                const response = await fetch(url);
-                if (response.status === 429) {
-                    if (retries < maxRetries) {
-                        console.log(`Rate limited. Retrying in ${retryDelay / 1000} seconds...`);
-                        await new Promise((resolve) => setTimeout(resolve, retryDelay));
-                        return fetchWithRetry(url, retries + 1);
-                    } else {
-                        throw new Error("Max retries reached. Please try again later.");
-                    }
-                }
-                return response;
-            } catch (error) {
-                console.error("Fetch error:", error);
-                throw error;
-            }
-        }
 
         while (true) {
             try {
@@ -1040,7 +1075,7 @@ async function getMyAnimeListDataByTitle() {
             console.log(`Normalized Anime Title: "${normalizedAnimeTitle}"`);
 
             const titleMatch = normalizedAnimeTitle.includes(normalizedSearchTitle);
-            const yearMatch = anime.aired.prop.from.year === year;
+            const yearMatch = anime.aired?.prop?.from?.year === year;
             if (titleMatch && yearMatch) {
                 console.log(`✅ Title and year match for "${anime.title}"`);
                 return true;
@@ -1105,7 +1140,7 @@ async function getMyAnimeListDataByTitle() {
     myAnimeListDataByTitlePromise = (async () => {
         const anime = await getAnimeData();
 
-        if (anime) {
+        if (anime?.score > 0) {
             return {
                 source: "MyAnimeList",
                 rating: Number(anime.score).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
@@ -1127,23 +1162,20 @@ async function getMyAnimeListDataByTitle() {
 }
 
 async function addMyAnimeListRatingBadge() {
-    // only if genre is anime
     const genreAnime = document.querySelector(".ipc-chip-list__scroller")?.textContent.includes("Anime");
     if (!genreAnime) return;
 
-    // only if enabled in settings
-    const configured = await GM_getValue("MyAnimeList", true);
-    if (!configured) return;
+    async function getMyAnimeListData() {
+        let data = null;
+        try {
+            data = await getMyAnimeListDataByImdbId();
+        } catch (e) {
+            console.error("MyAnimeList ID lookup failed, falling back to title search:", e);
+        }
+        return data ?? await getMyAnimeListDataByTitle();
+    }
 
-    const newRatingBadge = createRatingBadge("MyAnimeList");
-    if (!newRatingBadge) return;
-
-    const ratingData = (await getMyAnimeListDataByImdbId()) ?? (await getMyAnimeListDataByTitle());
-    const searchTitle = getOriginalTitle() ?? getMainTitle();
-    updateRatingBadge(newRatingBadge, {
-        ...ratingData,
-        url: ratingData?.url ?? `https://myanimelist.net/anime.php?q=${searchTitle}`,
-    });
+    return addRatingBadge("MyAnimeList", getMyAnimeListData, (t) => `https://myanimelist.net/anime.php?q=${t}`);
 }
 
 // -----------------------------------------------------------------------------------------------------
@@ -1159,7 +1191,7 @@ function collectMetadataForClipboard() {
 
     // if click listener does not exist
     if (!document.querySelector(".collectMetadataForClipboardListener") && title) {
-        if (genres && additionalMetadata) {
+        if (genres && additionalMetadata && additionalMetadataRuntime) {
             if (metadataAsText === "") {
                 // add title
                 metadataAsText += title + " | ";
@@ -1188,7 +1220,8 @@ function collectMetadataForClipboard() {
 
 // Configuration Modal
 function configurationMenu() {
-    GM_addStyle(`
+    if (!document.getElementById("modal-css-style")) {
+        GM_addStyle(`
     .modal-overlay {
         position: fixed;
         top: 0;
@@ -1231,7 +1264,8 @@ function configurationMenu() {
         display: block;
         margin: 20px auto 0;
     }
-    `);
+    `).setAttribute("id", "modal-css-style");
+    }
 
     // Darken background
     const overlay = document.createElement("div");
@@ -1256,17 +1290,18 @@ function configurationMenu() {
 
     // Add checkboxes
     ratingSourceOptions.forEach((ratingSource) => {
+        const sourceKey = ratingSource.replace(/\s/g, "");
         const label = document.createElement("label");
         label.className = "checkbox-label";
 
         const checkbox = document.createElement("input");
         checkbox.type = "checkbox";
-        checkbox.checked = GM_getValue(ratingSource.replace(/\s/g, ""), true);
+        checkbox.checked = GM_getValue(sourceKey, true);
 
         checkbox.addEventListener("change", () => {
-            GM_setValue(ratingSource.replace(/\s/g, ""), checkbox.checked);
+            GM_setValue(sourceKey, checkbox.checked);
             if (!checkbox.checked) {
-                document.querySelector(`span.rating-bar__base-button[${ratingSource.replace(/\s/g, "")}]`).remove();
+                document.querySelector(`span.rating-bar__base-button[${sourceKey}]`)?.remove();
             } else {
                 // trigger observer to add new badges
                 const tempElement = document.createElement("div");
@@ -1286,11 +1321,12 @@ function configurationMenu() {
     closeButton.className =
         "close-button ipc-btn ipc-btn--half-padding ipc-btn--default-height ipc-btn--core-accent1 ipc-btn--theme-baseAlt ";
 
-    closeButton.addEventListener("click", () => {
+    const closeModal = () => {
         document.body.removeChild(overlay);
         document.body.removeChild(modal);
-    });
+    };
 
+    closeButton.addEventListener("click", closeModal);
     modal.appendChild(closeButton);
 
     // Add modal and overlay to the DOM
@@ -1298,10 +1334,19 @@ function configurationMenu() {
     document.body.appendChild(modal);
 
     // Close modal on click outside
-    overlay.addEventListener("click", () => {
-        document.body.removeChild(overlay);
-        document.body.removeChild(modal);
-    });
+    overlay.addEventListener("click", closeModal);
+}
+
+function isVideoGame(element) {
+    const text = element.textContent;
+    return (
+        text.toLowerCase().includes("game") ||
+        text.includes("Jeu vidéo") ||
+        text.includes("Videospiel") ||
+        text.includes("Videogioco") ||
+        text.includes("Videojuego") ||
+        text.includes("वीडियो गेम")
+    );
 }
 
 // add and keep elements in header container
@@ -1315,15 +1360,7 @@ async function main() {
             const metadataFirstElement = document
                 .querySelector('[data-testid="hero__pageTitle"]')
                 ?.parentElement?.querySelector("ul > li");
-            if (
-                metadataFirstElement &&
-                !metadataFirstElement.textContent.toLowerCase().includes("game") &&
-                !metadataFirstElement.textContent.includes("Jeu vidéo") &&
-                !metadataFirstElement.textContent.includes("Videospiel") &&
-                !metadataFirstElement.textContent.includes("Videogioco") &&
-                !metadataFirstElement.textContent.includes("Videojuego") &&
-                !metadataFirstElement.textContent.includes("वीडियो गेम")
-            ) {
+            if (metadataFirstElement && !isVideoGame(metadataFirstElement)) {
                 // make sure CSS is not removed from DOM
                 addCss();
                 await Promise.all([
@@ -1332,7 +1369,7 @@ async function main() {
                     addMetacriticRatingBadge(),
                     addDoubanRatingBadge(),
                     addTmdbRatingBadge(),
-                ]);
+                ]).catch(e => console.error("Badge loading error:", e));
 
                 collectMetadataForClipboard();
             }
