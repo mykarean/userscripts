@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            IMDb with additional ratings
 // @description     Adds additional ratings (TMDB, Douban, Metacritic, Rotten Tomatoes, MyAnimeList) to imdb.com for movies and series. These can be activated or deactivated individually in the extension's configuration menu, which is accessible via the Tampermonkey menu. The extension also allows you to copy movie metadata by simply clicking on the runtime below the movie title.
-// @version         20260510.1
+// @version         20260510.2
 // @author          mykarean
 // @icon            http://imdb.com/favicon.ico
 // @match           https://*.imdb.com/title/*
@@ -34,8 +34,12 @@ const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:150.0) Gecko/20
 const undefinedValue = "X";
 const initialValue = 0;
 
-// Timeout configuration for GM_xmlhttpRequest (in milliseconds)
-const TIMEOUT_GM_XMLHTTP_REQUEST = 50000;
+// Timeouts in milliseconds
+const TIMEOUT_GM_XMLHTTP_REQUEST = 20000;
+const FETCH_TIMEOUT = 10000;
+const WARN_TIMER_DELAY = 5000;
+// Max pixel height before title font size is reduced to fit a single line
+const TITLE_MAX_HEIGHT = 58;
 
 function getTitleElement() {
     return document.querySelector('[data-testid="hero__pageTitle"]');
@@ -99,7 +103,7 @@ GM_registerMenuCommand("Configuration", configurationMenu, "c");
                 const request = GM_xmlhttpRequestOrig({
                     ...initialDetails,
                     redirect: "manual",
-                    onload: function (response) {
+                    onload: (response) => {
                         if (response.status >= 300 && response.status < 400) {
                             const m = response.responseHeaders.match(/Location:\s*(\S+)/i);
                             // Follow redirect manually
@@ -333,14 +337,13 @@ async function addCss() {
 function createRatingBadge(ratingSource) {
     const ratingElementImdb = document.querySelector('div[data-testid="hero-rating-bar__aggregate-rating"]');
 
-    // ignore if the rating badge has already been created
     if (!ratingElementImdb || document.querySelector(`span.rating-bar__base-button[${ratingSource}]`)) return null;
 
     function updateRatingElement(element, rating, voteCount) {
         let ratingElement = element.querySelector("div[data-testid=hero-rating-bar__aggregate-rating__score]");
         if (ratingElement) {
             ratingElement.querySelector("span").innerText = rating;
-            ratingElement.nextSibling.nextSibling.innerText = voteCount;
+            ratingElement.nextSibling.nextSibling.innerText = voteCount; // skip separator text node to reach vote count
         }
     }
 
@@ -363,7 +366,6 @@ function createRatingBadge(ratingSource) {
             return null;
         }
 
-        // Critic rating: replace star svg element with critic rating by cloning the rating element
         const criticRating = criticRatingElement.cloneNode(true);
         criticRating.classList.add("critic-rating");
         criticRatingElement.classList.add("user-rating");
@@ -490,9 +492,9 @@ function fitTitleToSingleLine() {
     if (!element) return;
     let fontSize = parseFloat(window.getComputedStyle(element).fontSize);
 
-    while (element.offsetHeight >= 58 && fontSize >= 26) {
+    while (element.offsetHeight >= TITLE_MAX_HEIGHT && fontSize >= 26) {
         fontSize -= 1;
-        element.style.fontSize = fontSize + "px";
+        element.style.fontSize = `${fontSize}px`;
     }
 }
 
@@ -505,7 +507,7 @@ async function addRatingBadge(sourceKey, getData, fallbackUrl) {
 
     const warnTimer = setTimeout(
         () => addWarningBubble(newRatingBadge, "Taking longer than usual..."),
-        5000
+        WARN_TIMER_DELAY
     );
 
     try {
@@ -546,18 +548,11 @@ async function getTmdbData() {
     };
 
     tmdbDataPromise = fetch(`https://api.themoviedb.org/3/find/${imdbId}?external_source=imdb_id`, options)
-        .then((response) => {
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return response.json();
-        })
-        .then((data) => {
+        .then(async (response) => {
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const data = await response.json();
             const result = data.movie_results[0] || data.tv_results[0];
-            if (!result) {
-                return { source: "TMDB", rating: initialValue, voteCount: initialValue, url: null };
-            }
-
+            if (!result) return { source: "TMDB", rating: initialValue, voteCount: initialValue, url: null };
             console.log("TMDB: ", result);
             return {
                 source: "TMDB",
@@ -571,13 +566,7 @@ async function getTmdbData() {
         })
         .catch((error) => {
             console.error("Error fetching TMDb data:", error);
-            return {
-                source: "TMDB",
-                rating: initialValue,
-                voteCount: initialValue,
-                url: null,
-                error: error.message,
-            };
+            return { source: "TMDB", rating: initialValue, voteCount: initialValue, url: null, error: error.message };
         });
 
     return tmdbDataPromise;
@@ -693,7 +682,7 @@ function getWikidataIds() {
             method: "GET",
             timeout: TIMEOUT_GM_XMLHTTP_REQUEST,
             url: `https://www.wikidata.org/w/api.php?action=query&list=search&srsearch=haswbstatement:P345=${imdbId}&format=json&srnamespace=0`,
-            onload: function (response) {
+            onload: (response) => {
                 try {
                     if (response.status < 200 || response.status >= 300) {
                         console.error(`getWikidataIds: HTTP ${response.status}`);
@@ -709,7 +698,7 @@ function getWikidataIds() {
                         method: "GET",
                         timeout: TIMEOUT_GM_XMLHTTP_REQUEST,
                         url: `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${entityId}&props=claims&format=json`,
-                        onload: function (r2) {
+                        onload: (r2) => {
                             try {
                                 if (r2.status < 200 || r2.status >= 300) {
                                     console.error(`getWikidataIds: HTTP ${r2.status}`);
@@ -760,7 +749,7 @@ async function getMetacriticData() {
                 url: url,
                 timeout: TIMEOUT_GM_XMLHTTP_REQUEST,
                 headers: { "User-Agent": USER_AGENT },
-                onload: function (response) {
+                onload: (response) => {
                     try {
                         const parser = new DOMParser();
                         const result = parser.parseFromString(response.responseText, "text/html");
@@ -768,7 +757,7 @@ async function getMetacriticData() {
                         const parseRating = (ratingElement, voteSelector, divideByTen = false) => {
                             if (!ratingElement) return { rating: 0, voteCount: 0 };
 
-                            let ratingText = ratingElement.textContent.trim();
+                            const ratingText = ratingElement.textContent.trim();
                             let rating = !isNaN(ratingText) ? Number(ratingText) : 0;
 
                             if (divideByTen) {
@@ -833,20 +822,8 @@ async function getMetacriticData() {
 
     metacriticDataPromise = (async () => {
         const { metacriticId } = await getWikidataIds();
-        const url = encodeURI(`https://www.metacritic.com/${metacriticId}`);
-
-        if (metacriticId !== "") {
-            return fetchMetacriticData(url);
-        } else {
-            return {
-                source: "Metacritic",
-                criticRating: initialValue,
-                userRating: initialValue,
-                criticVoteCount: initialValue,
-                userVoteCount: initialValue,
-                url: null,
-            };
-        }
+        if (metacriticId === "") return { source: "Metacritic", criticRating: initialValue, userRating: initialValue, criticVoteCount: initialValue, userVoteCount: initialValue, url: null };
+        return fetchMetacriticData(encodeURI(`https://www.metacritic.com/${metacriticId}`));
     })();
 
     return metacriticDataPromise;
@@ -875,7 +852,7 @@ async function getRottenTomatoesData() {
                 url: url,
                 timeout: TIMEOUT_GM_XMLHTTP_REQUEST,
                 headers: { "User-Agent": USER_AGENT },
-                onload: function (response) {
+                onload: (response) => {
                     try {
                         const parser = new DOMParser();
                         const result = parser.parseFromString(response.responseText, "text/html");
@@ -924,20 +901,8 @@ async function getRottenTomatoesData() {
 
     rottenTomatoesDataPromise = (async () => {
         const { rottenTomatoesId } = await getWikidataIds();
-        const url = encodeURI(`https://www.rottentomatoes.com/${rottenTomatoesId}`);
-
-        if (rottenTomatoesId !== "") {
-            return fetchRottenTomatoesData(url);
-        } else {
-            return {
-                source: "RottenTomatoes",
-                criticRating: initialValue,
-                userRating: initialValue,
-                criticVoteCount: initialValue,
-                userVoteCount: initialValue,
-                url: null,
-            };
-        }
+        if (rottenTomatoesId === "") return { source: "RottenTomatoes", criticRating: initialValue, userRating: initialValue, criticVoteCount: initialValue, userVoteCount: initialValue, url: null };
+        return fetchRottenTomatoesData(encodeURI(`https://www.rottentomatoes.com/${rottenTomatoesId}`));
     })();
 
     return rottenTomatoesDataPromise;
@@ -973,11 +938,11 @@ async function getMyAnimeListDataByImdbId() {
                 timeout: TIMEOUT_GM_XMLHTTP_REQUEST,
                 url: url,
                 headers: { "User-Agent": USER_AGENT },
-                onload: function (response) {
+                onload: (response) => {
                     try {
                         if (response.status !== 200) {
-                            console.error("MyAnimeList: HTTP Error: " + response.status);
-                            reject("HTTP Error " + response.status);
+                            console.error(`MyAnimeList: HTTP Error: ${response.status}`);
+                            reject(`HTTP Error ${response.status}`);
                             return;
                         }
                         const result = JSON.parse(response.responseText);
@@ -1027,11 +992,12 @@ function normalizeSearchString(string) {
         .trim();
 }
 
+// Jikan API enforces a rate limit (429) — retries with delay instead of failing immediately
 async function fetchWithRetry(url, retries = 0) {
     const maxRetries = 3;
     const retryDelay = 1000;
     try {
-        const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+        const response = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT) });
         if (response.status === 429) {
             if (retries < maxRetries) {
                 console.log(`Rate limited. Retrying in ${retryDelay / 1000} seconds...`);
@@ -1070,7 +1036,6 @@ async function getMyAnimeListDataByTitle() {
     const type = isNaN(metaItems?.[0]?.textContent) ? "tv" : "movie";
     const yearIndex = type === "tv" ? 1 : 0;
     const yearText = metaItems?.[yearIndex]?.textContent;
-    // Extract the first number up to the non-number sign and convert it into a integer (2018-2020)
     const year = parseInt(yearText);
 
     async function fetchAllPages(searchTitle) {
@@ -1218,12 +1183,12 @@ function collectMetadataForClipboard() {
         if (genres && additionalMetadata && additionalMetadataRuntime) {
             if (metadataAsText === "") {
                 // add title
-                metadataAsText += title + " | ";
+                metadataAsText += `${title} | `;
                 // collect additional metadata
-                for (let element of additionalMetadata) metadataAsText += element.textContent + " | ";
+                for (const element of additionalMetadata) metadataAsText += `${element.textContent} | `;
                 // collect genres
                 let iteration = genres?.length;
-                for (let genre of genres) {
+                for (const genre of genres) {
                     metadataAsText += genre.textContent;
 
                     // append "," as long as not last iteration
