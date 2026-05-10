@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            IMDb with additional ratings
 // @description     Adds additional ratings (TMDB, Douban, Metacritic, Rotten Tomatoes, MyAnimeList) to imdb.com for movies and series. These can be activated or deactivated individually in the extension's configuration menu, which is accessible via the Tampermonkey menu. The extension also allows you to copy movie metadata by simply clicking on the runtime below the movie title.
-// @version         20260510
+// @version         20260510.1
 // @author          mykarean
 // @icon            http://imdb.com/favicon.ico
 // @match           https://*.imdb.com/title/*
@@ -30,7 +30,7 @@
 
 const ratingSourceOptions = ["TMDB", "Douban", "Metacritic", "Rotten Tomatoes", "My Anime List"];
 const imdbId = window.location.pathname.match(/title\/(tt\d+)/)[1];
-const USER_AGENT = "Mozilla/5.0 (x64; rv) Gecko Firefox";
+const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:150.0) Gecko/20100101 Firefox/150.0";
 const undefinedValue = "X";
 const initialValue = 0;
 
@@ -607,6 +607,7 @@ async function getDoubanData() {
                 timeout: TIMEOUT_GM_XMLHTTP_REQUEST,
                 headers: {
                     "Content-Type": "application/x-www-form-urlencoded; charset=utf8",
+                    "User-Agent": USER_AGENT,
                 },
                 onload: (response) => {
                     try {
@@ -686,12 +687,12 @@ let wikidataPromise = null;
 function getWikidataIds() {
     if (wikidataPromise) return wikidataPromise;
 
+    // https://www.wikidata.org/w/api.php
     wikidataPromise = new Promise((resolve, reject) => {
         GM_xmlhttpRequest({
             method: "GET",
             timeout: TIMEOUT_GM_XMLHTTP_REQUEST,
-            headers: { "User-Agent": USER_AGENT },
-            url: `https://query.wikidata.org/sparql?format=json&query=SELECT * WHERE {?s wdt:P345 "${imdbId}". OPTIONAL { ?s wdt:P1712 ?Metacritic_ID. } OPTIONAL { ?s wdt:P1258 ?RottenTomatoes_ID. } OPTIONAL { ?s wdt:P4086 ?MyAnimeList_ID. }}`,
+            url: `https://www.wikidata.org/w/api.php?action=query&list=search&srsearch=haswbstatement:P345=${imdbId}&format=json&srnamespace=0`,
             onload: function (response) {
                 try {
                     if (response.status < 200 || response.status >= 300) {
@@ -699,11 +700,34 @@ function getWikidataIds() {
                         reject(`HTTP Error ${response.status}`);
                         return;
                     }
-                    const bindings = JSON.parse(response.responseText).results.bindings[0] || {};
-                    resolve({
-                        metacriticId: bindings.Metacritic_ID?.value ?? "",
-                        rottenTomatoesId: bindings.RottenTomatoes_ID?.value ?? "",
-                        myAnimeListId: bindings.MyAnimeList_ID?.value ?? "",
+                    const entityId = JSON.parse(response.responseText).query?.search?.[0]?.title;
+                    if (!entityId) {
+                        resolve({ metacriticId: "", rottenTomatoesId: "", myAnimeListId: "" });
+                        return;
+                    }
+                    GM_xmlhttpRequest({
+                        method: "GET",
+                        timeout: TIMEOUT_GM_XMLHTTP_REQUEST,
+                        url: `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${entityId}&props=claims&format=json`,
+                        onload: function (r2) {
+                            try {
+                                if (r2.status < 200 || r2.status >= 300) {
+                                    console.error(`getWikidataIds: HTTP ${r2.status}`);
+                                    reject(`HTTP Error ${r2.status}`);
+                                    return;
+                                }
+                                const claims = JSON.parse(r2.responseText).entities?.[entityId]?.claims || {};
+                                resolve({
+                                    metacriticId: claims.P1712?.[0]?.mainsnak?.datavalue?.value ?? "",
+                                    rottenTomatoesId: claims.P1258?.[0]?.mainsnak?.datavalue?.value ?? "",
+                                    myAnimeListId: claims.P4086?.[0]?.mainsnak?.datavalue?.value ?? "",
+                                });
+                            } catch (e) {
+                                console.error("getWikidataIds: Parse error.", e);
+                                reject("Parse error");
+                            }
+                        },
+                        ...gmErrorHandlers(reject, "Wikidata"),
                     });
                 } catch (e) {
                     console.error("getWikidataIds: Parse error.", e);
