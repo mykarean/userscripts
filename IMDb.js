@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            IMDb with additional ratings
 // @description     Adds additional ratings (TMDB, Douban, Metacritic, Rotten Tomatoes, MyAnimeList) to imdb.com for movies and series. These can be activated or deactivated individually in the extension's configuration menu, which is accessible via the Tampermonkey menu. The extension also allows you to copy movie metadata by simply clicking on the runtime below the movie title.
-// @version         20260510.2
+// @version         20260518
 // @author          mykarean
 // @icon            http://imdb.com/favicon.ico
 // @match           https://*.imdb.com/title/*
@@ -358,7 +358,7 @@ function createRatingBadge(ratingSource) {
 
     if (ratingSource === "Metacritic" || ratingSource === "RottenTomatoes") {
         const criticRatingElement = clonedRatingBadge.querySelector(
-            "div[data-testid=hero-rating-bar__aggregate-rating__score]"
+            "div[data-testid=hero-rating-bar__aggregate-rating__score]",
         )?.parentElement;
 
         if (!criticRatingElement) {
@@ -428,9 +428,18 @@ function addWarningBubble(badge, message) {
 
 function gmErrorHandlers(reject, label) {
     return {
-        onerror:   () => { console.error(`${label}: Request Error.`);     reject("Request Error"); },
-        onabort:   () => { console.error(`${label}: Request Aborted.`);   reject("Request Aborted"); },
-        ontimeout: () => { console.error(`${label}: Request Timed Out.`); reject("Request Timed Out"); },
+        onerror: () => {
+            console.error(`${label}: Request Error.`);
+            reject("Request Error");
+        },
+        onabort: () => {
+            console.error(`${label}: Request Aborted.`);
+            reject("Request Aborted");
+        },
+        ontimeout: () => {
+            console.error(`${label}: Request Timed Out.`);
+            reject("Request Timed Out");
+        },
     };
 }
 
@@ -451,8 +460,10 @@ function updateRatingBadge(newRatingBadge, ratingData) {
     newRatingBadge.querySelector("a").style.opacity = "1";
 
     if (ratingData.error && !ratingData.source) {
-        newRatingBadge.querySelectorAll(badgeSelectors.generalRating).forEach(el => el.textContent = undefinedValue);
-        newRatingBadge.querySelectorAll(badgeSelectors.generalVoteCount).forEach(el => el.textContent = undefinedValue.toLowerCase());
+        newRatingBadge.querySelectorAll(badgeSelectors.generalRating).forEach((el) => (el.textContent = undefinedValue));
+        newRatingBadge
+            .querySelectorAll(badgeSelectors.generalVoteCount)
+            .forEach((el) => (el.textContent = undefinedValue.toLowerCase()));
         addErrorBubble(newRatingBadge, ratingData.error);
         return;
     }
@@ -505,10 +516,7 @@ async function addRatingBadge(sourceKey, getData, fallbackUrl) {
     const newRatingBadge = createRatingBadge(sourceKey);
     if (!newRatingBadge) return;
 
-    const warnTimer = setTimeout(
-        () => addWarningBubble(newRatingBadge, "Taking longer than usual..."),
-        WARN_TIMER_DELAY
-    );
+    const warnTimer = setTimeout(() => addWarningBubble(newRatingBadge, "Taking longer than usual..."), WARN_TIMER_DELAY);
 
     try {
         const ratingData = await getData();
@@ -619,7 +627,7 @@ async function getDoubanData() {
         const data = await fetchFromDouban(
             `https://api.douban.com/v2/movie/imdb/${imdbId}`,
             "POST",
-            "apikey=0ac44ae016490db2204ce0a042db2916"
+            "apikey=0ac44ae016490db2204ce0a042db2916",
         );
         if (data && data.alt && data.alt !== "N/A") {
             const url = data.alt.replace("/movie/", "/subject/") + "/";
@@ -713,14 +721,14 @@ function getWikidataIds() {
                                 });
                             } catch (e) {
                                 console.error("getWikidataIds: Parse error.", e);
-                                reject("Parse error");
+                                resolve({ metacriticId: "", rottenTomatoesId: "", myAnimeListId: "" });
                             }
                         },
                         ...gmErrorHandlers(reject, "Wikidata"),
                     });
                 } catch (e) {
                     console.error("getWikidataIds: Parse error.", e);
-                    reject("Parse error");
+                    resolve({ metacriticId: "", rottenTomatoesId: "", myAnimeListId: "" });
                 }
             },
             ...gmErrorHandlers(reject, "Wikidata"),
@@ -780,25 +788,25 @@ async function getMetacriticData() {
                         };
 
                         const criticRatingElement = result.querySelector(
-                            'div[data-testid="global-score-wrapper"]:has(a[href*="critic-reviews"]) span[data-testid="global-score-value"]'
+                            'div[data-testid="global-score-wrapper"]:has(a[href*="critic-reviews"]) span[data-testid="global-score-value"]',
                         );
                         const { rating: criticRating, voteCount: criticVoteCount } = parseRating(
                             criticRatingElement,
                             'a[data-testid="global-score-review-count-link"][href*="critic-reviews"]',
-                            true
+                            true,
                         );
 
                         const userRatingElement = result.querySelector(
-                            'div[data-testid="global-score-wrapper"]:has(a[href*="user-reviews"]) span[data-testid="global-score-value"]'
+                            'div[data-testid="global-score-wrapper"]:has(a[href*="user-reviews"]) span[data-testid="global-score-value"]',
                         );
                         const { rating: userRating, voteCount: userVoteCount } = parseRating(
                             userRatingElement,
                             'a[data-testid="global-score-review-count-link"][href*="user-reviews"]',
-                            false
+                            false,
                         );
 
                         console.log(
-                            `Critic rating: ${criticRating}, User rating: ${userRating}, Critic vote count: ${criticVoteCount}, User vote count: ${userVoteCount}, URL: ${url}`
+                            `Critic rating: ${criticRating}, User rating: ${userRating}, Critic vote count: ${criticVoteCount}, User vote count: ${userVoteCount}, URL: ${url}`,
                         );
 
                         resolve({
@@ -811,7 +819,15 @@ async function getMetacriticData() {
                         });
                     } catch (e) {
                         console.error("getMetacriticRatings: Parse error.", e);
-                        reject("Parse error");
+                        resolve({
+                            source: "Metacritic",
+                            criticRating: initialValue,
+                            userRating: initialValue,
+                            criticVoteCount: initialValue,
+                            userVoteCount: initialValue,
+                            url,
+                            error: "Parse error",
+                        });
                     }
                 },
 
@@ -822,7 +838,15 @@ async function getMetacriticData() {
 
     metacriticDataPromise = (async () => {
         const { metacriticId } = await getWikidataIds();
-        if (metacriticId === "") return { source: "Metacritic", criticRating: initialValue, userRating: initialValue, criticVoteCount: initialValue, userVoteCount: initialValue, url: null };
+        if (metacriticId === "")
+            return {
+                source: "Metacritic",
+                criticRating: initialValue,
+                userRating: initialValue,
+                criticVoteCount: initialValue,
+                userVoteCount: initialValue,
+                url: null,
+            };
         return fetchMetacriticData(encodeURI(`https://www.metacritic.com/${metacriticId}`));
     })();
 
@@ -879,7 +903,9 @@ async function getRottenTomatoesData() {
                         const criticVoteCount = criticRating !== 0 ? formatVoteCount(ratingData.criticsScore.ratingCount) : 0;
                         const userVoteCount = userRating !== 0 ? formatVoteCount(ratingData.audienceScore.bandedRatingCount) : 0;
 
-                        console.log(`Critic rating: ${criticRating}, User rating: ${userRating}, criticVoteCount: ${criticVoteCount}, userVoteCount: ${userVoteCount}, Url: ${url}`);
+                        console.log(
+                            `Critic rating: ${criticRating}, User rating: ${userRating}, criticVoteCount: ${criticVoteCount}, userVoteCount: ${userVoteCount}, Url: ${url}`,
+                        );
 
                         resolve({
                             source: "RottenTomatoes",
@@ -891,7 +917,15 @@ async function getRottenTomatoesData() {
                         });
                     } catch (e) {
                         console.error("getRottenTomatoesRatings: Parse error.", e);
-                        reject("Parse error");
+                        resolve({
+                            source: "RottenTomatoes",
+                            criticRating: initialValue,
+                            userRating: initialValue,
+                            criticVoteCount: initialValue,
+                            userVoteCount: initialValue,
+                            url,
+                            error: "Parse error",
+                        });
                     }
                 },
                 ...gmErrorHandlers(reject, "RottenTomatoes"),
@@ -901,7 +935,15 @@ async function getRottenTomatoesData() {
 
     rottenTomatoesDataPromise = (async () => {
         const { rottenTomatoesId } = await getWikidataIds();
-        if (rottenTomatoesId === "") return { source: "RottenTomatoes", criticRating: initialValue, userRating: initialValue, criticVoteCount: initialValue, userVoteCount: initialValue, url: null };
+        if (rottenTomatoesId === "")
+            return {
+                source: "RottenTomatoes",
+                criticRating: initialValue,
+                userRating: initialValue,
+                criticVoteCount: initialValue,
+                userVoteCount: initialValue,
+                url: null,
+            };
         return fetchRottenTomatoesData(encodeURI(`https://www.rottentomatoes.com/${rottenTomatoesId}`));
     })();
 
@@ -951,7 +993,10 @@ async function getMyAnimeListDataByImdbId() {
                             console.log("getMyAnimeListDataByImdbId: ", result.data.mal_id, result);
                             resolve({
                                 source: "MyAnimeList",
-                                rating: Number(rating).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+                                rating: Number(rating).toLocaleString(undefined, {
+                                    minimumFractionDigits: 1,
+                                    maximumFractionDigits: 1,
+                                }),
                                 voteCount: result.data.scored_by?.toLocaleString(),
                                 url: result.data.url,
                             });
@@ -960,7 +1005,13 @@ async function getMyAnimeListDataByImdbId() {
                         }
                     } catch (e) {
                         console.error("MyAnimeList: Parse error.", e);
-                        reject("Parse error");
+                        resolve({
+                            source: "MyAnimeList",
+                            rating: initialValue,
+                            voteCount: initialValue,
+                            url: `https://myanimelist.net/anime/${myAnimeListId}`,
+                            error: "Parse error",
+                        });
                     }
                 },
                 ...gmErrorHandlers(reject, "MyAnimeList"),
@@ -1045,7 +1096,7 @@ async function getMyAnimeListDataByTitle() {
         while (true) {
             try {
                 const response = await fetchWithRetry(
-                    `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(searchTitle)}&type=${type}&page=${currentPage}`
+                    `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(searchTitle)}&type=${type}&page=${currentPage}`,
                 );
                 const data = await response.json();
                 allResults = allResults.concat(data.data);
@@ -1085,7 +1136,7 @@ async function getMyAnimeListDataByTitle() {
                 console.log(`Checking synonyms for anime[${index}] - ${anime.title}, Synonyms: ${anime.title_synonyms}`);
 
                 const synonymMatch = anime.title_synonyms.some((synonym) =>
-                    normalizeSearchString(synonym).includes(normalizedSearchTitle)
+                    normalizeSearchString(synonym).includes(normalizedSearchTitle),
                 );
 
                 console.log(`✅ Synonym match for anime[${index}] - ${anime.title}: ${synonymMatch}`);
@@ -1108,7 +1159,7 @@ async function getMyAnimeListDataByTitle() {
 
             if (!result && originalTitle) {
                 console.log(
-                    `getMyAnimeListDataByTitle: No results found for "${mainTitle}", retrying with originalTitle "${originalTitle}"`
+                    `getMyAnimeListDataByTitle: No results found for "${mainTitle}", retrying with originalTitle "${originalTitle}"`,
                 );
                 result = await fetchAllPages(originalTitle);
             }
@@ -1161,7 +1212,7 @@ async function addMyAnimeListRatingBadge() {
         } catch (e) {
             console.error("MyAnimeList ID lookup failed, falling back to title search:", e);
         }
-        return data ?? await getMyAnimeListDataByTitle();
+        return data ?? (await getMyAnimeListDataByTitle());
     }
 
     return addRatingBadge("MyAnimeList", getMyAnimeListData, (t) => `https://myanimelist.net/anime.php?q=${t}`);
@@ -1358,7 +1409,7 @@ async function main() {
                     addMetacriticRatingBadge(),
                     addDoubanRatingBadge(),
                     addTmdbRatingBadge(),
-                ]).catch(e => console.error("Badge loading error:", e));
+                ]).catch((e) => console.error("Badge loading error:", e));
 
                 collectMetadataForClipboard();
             }
