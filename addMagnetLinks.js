@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            Magnet Links & Torrent Search Filter
 // @description     Adds magnet links to BT4G, Limetorrents, BT1207, filtering of search results by minimum and maximum size (BT4G only), automatic reload in case of server errors every 5 minutes
-// @version         20260427
+// @version         20260621
 // @author          mykarean
 // @match           *://bt4gprx.com/*
 // @match           *://*.limetorrents.fun/search/all/*
@@ -34,7 +34,7 @@ const magnetImage = GM_info.script.icon;
 
 let itemsFoundElement;
 if (hostname === bt4gURL) {
-    itemsFoundElement = document.querySelector("body > main > p");
+    itemsFoundElement = document.querySelector("p.notion-result-info");
 } else if (hostname === limetorrentsURL) {
     itemsFoundElement = document.querySelector("#content > h2");
 }
@@ -61,7 +61,7 @@ function setStylesAndFavicon() {
             background: #000000;
             outline: 2px solid #ffffff00;
             font-family: system-ui,-apple-system,sans-serif;
-            font-size: 16px;
+            font-size: 15px;
             font-weight: 400;
             color: white;
             text-decoration: none;
@@ -78,6 +78,7 @@ function setStylesAndFavicon() {
         }
         a.magnet-link:hover {
             outline: 2px solid #ff3f00;
+            text-decoration: none;
         }
     `);
 
@@ -95,18 +96,6 @@ function setStylesAndFavicon() {
         linkFavicon.type = "image/png";
         linkFavicon.href = "/static/favicon.ico";
         document.head.appendChild(linkFavicon);
-    }
-    if (hostname === bt4gURL) {
-        GM_addStyle(`
-            .lead {
-                display: inline-block;
-            }
-            /* removing the annoying hover effect on search results */
-            .result-item:hover,
-            .list-group-item:hover {
-                transform: none;
-            }
-        `);
     }
 }
 
@@ -576,17 +565,31 @@ function addClickAllMagnetLinks() {
     // }
 
     // no elements found
-    if (
-        document.querySelector("body > main > p")?.textContent.includes("did not match any documents") ||
-        document.querySelector("#content > h2:nth-child(9)")
-    )
+    if (itemsFoundElement?.textContent.includes("did not match any documents") || document.querySelector("#content > h2:nth-child(9)"))
         return;
 
-    const targetElement = itemsFoundElement?.parentElement?.children[3];
-    if (targetElement) {
+    if (itemsFoundElement) {
+        // trim result info text before appending new controls
+        if (hostname === bt4gURL) {
+            itemsFoundElement.querySelector("svg")?.remove();
+            const badges = itemsFoundElement.querySelectorAll(".badge");
+            if (badges.length >= 2) badges[badges.length - 1].remove();
+            for (const node of [...itemsFoundElement.childNodes]) {
+                if (node.nodeType === Node.TEXT_NODE) {
+                    if (node.textContent.includes(" for ")) {
+                        node.textContent = node.textContent.replace(/ for.*/, "");
+                    } else if (node.textContent.trim() === "") {
+                        node.remove();
+                    }
+                }
+            }
+        } else if (hostname === limetorrentsURL) {
+            itemsFoundElement.textContent = "";
+        }
+
         const openAllMagnetLinksSpan = document.createElement("span");
         openAllMagnetLinksSpan.innerHTML = "Open all <span class='badge bg-primary'>0</span> loaded magnet links";
-        openAllMagnetLinksSpan.classList.add("magnet-link-all-span", "lead");
+        openAllMagnetLinksSpan.classList.add("magnet-link-all-span");
         openAllMagnetLinksSpan.style.marginLeft = "10px";
 
         const openAllMagnetLinksImg = document.createElement("img");
@@ -594,8 +597,8 @@ function addClickAllMagnetLinks() {
         openAllMagnetLinksImg.classList.add("magnet-link-img");
         openAllMagnetLinksImg.style.cssText = "cursor:pointer;vertical-align:sub;";
 
-        targetElement.insertAdjacentElement("afterend", openAllMagnetLinksSpan);
-        openAllMagnetLinksSpan.insertAdjacentElement("afterend", openAllMagnetLinksImg);
+        itemsFoundElement.appendChild(openAllMagnetLinksSpan);
+        itemsFoundElement.appendChild(openAllMagnetLinksImg);
 
         openAllMagnetLinksImg.addEventListener("click", () => {
             const addedMagnetLinks = document.querySelectorAll("a.magnet-link");
@@ -613,13 +616,6 @@ function addClickAllMagnetLinks() {
                 openAllMagnetLinksSpan.textContent = "No magnet links found";
             }
         });
-
-        // for a fixed position and more space, remove superfluous information
-        if (hostname === bt4gURL) {
-            itemsFoundElement.innerHTML = itemsFoundElement.innerHTML.replace(/(\ items)\ for\ .*/, "$1");
-        } else if (hostname === limetorrentsURL) {
-            itemsFoundElement.textContent = "";
-        }
     }
 }
 
@@ -631,7 +627,7 @@ function itemFilterBySize() {
     if (hostname !== bt4gURL) return;
 
     // no elements found
-    if (document.querySelector("body > main > p")?.textContent.includes("did not match any documents")) return;
+    if (itemsFoundElement?.textContent.includes("did not match any documents")) return;
 
     if (!document.getElementById("item-filter-styles")) {
         GM_addStyle(`
@@ -640,12 +636,16 @@ function itemFilterBySize() {
             align-items: center;
         }
         .filter-button {
-            color: #212121;
+            color: white;
             padding: 3px 7px;
             border: none;
             margin-right: 5px;
             margin-left: 10px;
         }
+        .filter-button.is-on  { background-color: #3ea83e; }
+        .filter-button.is-off { background-color: #e03e3e; }
+        .filter-button.is-on:hover  { background-color: #2e8a2e; color: white; }
+        .filter-button.is-off:hover { background-color: #c53737; color: white; }
         .filter-input {
             margin-left: 5px !important;
             /* padding-left: 12px !important; */
@@ -690,7 +690,7 @@ function itemFilterBySize() {
 
         container.append(minFilter.button, minFilter.input, maxFilter.button, maxFilter.input, unitLabel);
 
-        buttonTarget.parentNode.insertBefore(container, buttonTarget.nextSibling);
+        buttonTarget.appendChild(container);
 
         return {
             minButton: minFilter.button,
@@ -705,16 +705,18 @@ function itemFilterBySize() {
         let isFiltered = await GM.getValue(`is${filterType}Filtered`, false);
         let threshold = await GM.getValue(`${filterType.toLowerCase()}FilterThreshold`, isMinFilter ? 1 : 10);
 
-        button.textContent = isFiltered ? `${filterType} filter on` : `${filterType} filter off`;
-        button.style.backgroundColor = isFiltered ? "#b2dfdb" : "#dfb2b2";
+        const updateButton = () => {
+            button.textContent = isFiltered ? `${filterType} filter on` : `${filterType} filter off`;
+            button.classList.toggle("is-on", isFiltered);
+            button.classList.toggle("is-off", !isFiltered);
+        };
+        updateButton();
         input.value = threshold;
 
         button.addEventListener("click", async () => {
             isFiltered = !isFiltered;
             await GM.setValue(`is${filterType}Filtered`, isFiltered);
-
-            button.textContent = isFiltered ? `${filterType} filter on` : `${filterType} filter off`;
-            button.style.backgroundColor = isFiltered ? "#b2dfdb" : "#dfb2b2";
+            updateButton();
             await applyItemFilterBySize();
         });
 
