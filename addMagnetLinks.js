@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            Magnet Links & Torrent Search Filter
 // @description     Adds magnet links to BT4G, Limetorrents, BT1207, filtering of search results by minimum and maximum size (BT4G only), automatic reload in case of server errors every 5 minutes
-// @version         20260621
+// @version         20260622
 // @author          mykarean
 // @match           *://bt4gprx.com/*
 // @match           *://*.limetorrents.fun/search/all/*
@@ -53,28 +53,20 @@ function setStylesAndFavicon() {
             transition: filter 0.2s ease;
         }
         a.magnet-link {
-            display: inline-block !important;
-            vertical-align: middle;
+            display: inline-flex;
+            align-items: center;
             margin-right: 10px;
-            border-radius: 6px;
+            border-radius: 8px;
             padding: 1px 10px 3px 0;
             background: #000000;
             outline: 2px solid #ffffff00;
             font-family: system-ui,-apple-system,sans-serif;
             font-size: 15px;
-            font-weight: 400;
+            font-weight: 500;
             color: white;
             text-decoration: none;
             user-select: none;
             transition: outline .15s ease-in-out;
-        }
-        /* detail page of BT4G */
-        .card-body a.magnet-link {
-            padding: 0.375rem 0.75rem;
-            border: 0.8px solid transparent;
-        }
-        .card-body a.magnet-link .magnet-link-img {
-            margin-left: 0;
         }
         a.magnet-link:hover {
             outline: 2px solid #ff3f00;
@@ -87,6 +79,9 @@ function setStylesAndFavicon() {
         GM_addStyle(`
             a.magnet-link {
                 vertical-align: top;
+            }
+            .notion-list-item-title a:hover {
+                text-decoration: none;
             }
         `);
 
@@ -816,7 +811,7 @@ async function main() {
         // BT4G only: torrent detail page
         const link = document.querySelector('a[href*="/hash/"]:not([href^="magnet:"])');
         const hash = extractHashFromUrl(link?.href || "");
-        const torrentName = document.querySelector("body main h3")?.textContent;
+        const torrentName = document.querySelector("h1.notion-detail-title")?.textContent;
         if (hash) {
             insertMagnetLink(link, hash, torrentName);
         }
