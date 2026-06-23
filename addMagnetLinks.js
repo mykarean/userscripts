@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            Magnet Links & Torrent Search Filter
 // @description     Adds magnet links to BT4G, Limetorrents, BT1207, filtering of search results by minimum and maximum size (BT4G only), automatic reload in case of server errors every 5 minutes
-// @version         20260622
+// @version         20260624
 // @author          mykarean
 // @match           *://bt4gprx.com/*
 // @match           *://*.limetorrents.fun/search/all/*
@@ -635,12 +635,14 @@ function itemFilterBySize() {
             padding: 3px 7px;
             border: none;
             margin-right: 5px;
+            white-space: nowrap;
+            width: 106px;
             margin-left: 10px;
         }
         .filter-button.is-on  { background-color: #3ea83e; }
-        .filter-button.is-off { background-color: #e03e3e; }
+        .filter-button.is-off { background-color: #9e9e9e; }
         .filter-button.is-on:hover  { background-color: #2e8a2e; color: white; }
-        .filter-button.is-off:hover { background-color: #c53737; color: white; }
+        .filter-button.is-off:hover { background-color: #8a8a8a; color: white; }
         .filter-input {
             margin-left: 5px !important;
             /* padding-left: 12px !important; */
@@ -732,6 +734,8 @@ function itemFilterBySize() {
 
         await setupFilter(minButton, minInput, true);
         await setupFilter(maxButton, maxInput, false);
+
+
         await applyItemFilterBySize();
     }
 
