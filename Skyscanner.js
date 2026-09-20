@@ -4,7 +4,7 @@
 // @version      20260920.2
 // @author       mykarean
 // @icon         https://www.skyscanner.com/images/opengraph_v1.png
-// @include      /^https:\/\/www\.skyscanner\.[a-z.]+\/transport\/(flights|fluge|vols|vuelos)\/[a-z0-9-]+\/[a-z0-9-]+\/?(\?.*)?$/
+// @include      /^https:\/\/www\.skyscanner\.[a-z.]+\/transport\/(flights|fluge|vols|vuelos)\/.+/
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_deleteValue
@@ -99,6 +99,24 @@
             GM_setValue(MANUAL_LOCALE_KEY, locale);
         } catch {
             // GM storage unavailable - the manual entry still works for this page load
+        }
+    }
+
+    const SETTINGS_KEY = "sky-settings";
+
+    function loadSettings() {
+        try {
+            return GM_getValue(SETTINGS_KEY, null);
+        } catch {
+            return null;
+        }
+    }
+
+    function saveSettings(settings) {
+        try {
+            GM_setValue(SETTINGS_KEY, settings);
+        } catch {
+            // GM storage unavailable - the current values still work for this page load
         }
     }
 
@@ -284,6 +302,16 @@
     // ============================================================
     // DATE/MONTH ARITHMETIC
     // ============================================================
+
+    // True only for the route-selection page (.../transport/flights/origin/destination/), not
+    // for a results page with dates already appended to the path (.../origin/destination/date/date/).
+    // The hidden scrape iframe (see scrapeInTab) deliberately loads that dated results URL, so
+    // @include itself has to stay broad enough to match it - this check gates the visible panel instead.
+    function isSearchPage() {
+        const parts = location.pathname.split("/").filter(Boolean);
+        const idx = parts.findIndex((p) => p === "flights" || p === "fluge" || p === "vols" || p === "vuelos");
+        return idx !== -1 && parts.length === idx + 3;
+    }
 
     function parseRoute() {
         const parts = location.pathname.split("/").filter(Boolean);
@@ -771,6 +799,10 @@
 
     function buildPanel() {
         const s = refreshLocale();
+        const savedSettings = loadSettings();
+        const rangeValue = savedSettings?.rangeMonths ?? DEFAULT_RANGE_MONTHS;
+        const targetStayValue = savedSettings?.targetStayWeeks ?? DEFAULT_TARGET_STAY_WEEKS;
+        const flexibilityValue = savedSettings?.flexibilityPercent ?? DEFAULT_FLEXIBILITY_PERCENT;
 
         const styleTag = document.createElement("style");
         styleTag.textContent = STYLE;
@@ -783,9 +815,9 @@
         <h3>${s.title}</h3>
         <details id="sky-settings" open>
           <summary>${s.settings}</summary>
-          <div class="sky-field"><label for="sky-range">${s.searchRange}</label><input id="sky-range" type="number" min="1" max="12" value="${DEFAULT_RANGE_MONTHS}"></div>
-          <div class="sky-field"><label for="sky-target-w">${s.targetStay}</label><input id="sky-target-w" type="number" min="1" max="6" step="0.5" value="${DEFAULT_TARGET_STAY_WEEKS}"></div>
-          <div class="sky-field"><label for="sky-tolerance">${s.flexibility} <span id="sky-nights-preview" style="color:#6b7280"></span></label><input id="sky-tolerance" type="number" min="0" max="100" value="${DEFAULT_FLEXIBILITY_PERCENT}"></div>
+          <div class="sky-field"><label for="sky-range">${s.searchRange}</label><input id="sky-range" type="number" min="1" max="12" value="${rangeValue}"></div>
+          <div class="sky-field"><label for="sky-target-w">${s.targetStay}</label><input id="sky-target-w" type="number" min="1" max="6" step="0.5" value="${targetStayValue}"></div>
+          <div class="sky-field"><label for="sky-tolerance">${s.flexibility} <span id="sky-nights-preview" style="color:#6b7280"></span></label><input id="sky-tolerance" type="number" min="0" max="100" value="${flexibilityValue}"></div>
           <div id="sky-manual-locale" hidden></div>
           <button id="sky-start">${s.startSearch}</button>
         </details>
@@ -810,14 +842,23 @@
         renderManualLocaleSection(s);
 
         const previewEl = panel.querySelector("#sky-nights-preview");
+        const rangeInput = panel.querySelector("#sky-range");
         const targetInput = panel.querySelector("#sky-target-w");
         const toleranceInput = panel.querySelector("#sky-tolerance");
         const updatePreview = () => {
             const { minNights, maxNights } = computeNightsWindow(Number(targetInput.value), Number(toleranceInput.value));
             previewEl.textContent = t().nightsRange(minNights, maxNights);
         };
+        const persistSettings = () => {
+            saveSettings({
+                rangeMonths: Number(rangeInput.value),
+                targetStayWeeks: Number(targetInput.value),
+                flexibilityPercent: Number(toleranceInput.value),
+            });
+        };
         targetInput.addEventListener("input", updatePreview);
         toleranceInput.addEventListener("input", updatePreview);
+        [rangeInput, targetInput, toleranceInput].forEach((input) => input.addEventListener("input", persistSettings));
         updatePreview();
 
         setupCustomScrollbar();
@@ -1131,9 +1172,11 @@
 
     if (isScrapeTab()) {
         runScrapeMode();
-    } else if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", buildPanel);
-    } else {
-        buildPanel();
+    } else if (isSearchPage()) {
+        if (document.readyState === "loading") {
+            document.addEventListener("DOMContentLoaded", buildPanel);
+        } else {
+            buildPanel();
+        }
     }
 })();
