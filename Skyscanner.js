@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cheapest Round-Trip Dates Finder
-// @description  Automatically scans months of date combinations for the cheapest round trip and verifies real prices/layovers - automation Skyscanner's own flexible-date search doesn't offer
-// @version      20260920
+// @description  Automatically scans months of date combinations for the cheapest round trip and verifies real prices/layovers - automation Skyscanner's own flexible-date search doesn't offer. Just open a route (origin + destination) - no dates needed.
+// @version      20260920.1
 // @author       mykarean
 // @include      /^https:\/\/www\.skyscanner\.[a-z.]+\/transport\/(flights|fluge|vols|vuelos)\/.+/
 // @grant        GM_getValue
@@ -18,6 +18,11 @@
     "use strict";
 
     let LOCALE;
+
+    const DEFAULT_RANGE_MONTHS = 6;
+    const DEFAULT_TARGET_STAY_WEEKS = 3;
+    const DEFAULT_FLEXIBILITY_PERCENT = 15;
+
     const REQUEST_DELAY_MS = 400;
     const SCRAPE_TIMEOUT_MS = 30000;
     // The outer timeout (see scrapeInTab) starts the instant the iframe is created, while the
@@ -101,12 +106,13 @@
 
     const STRINGS = {
         de: {
-            title: "Günstigste Reisedaten",
+            title: "Günstigste Hin- und Rückflugtermine",
             settings: "Einstellungen",
             searchRange: "Suchzeitraum (Monate, max 12)",
             targetStay: "Ziel-Aufenthalt (Wochen)",
             flexibility: "Flexibilität (± %)",
             startSearch: "Suche starten",
+            searchAgain: "Erneut suchen",
             nightsRange: (min, max) => `(${min}-${max} Nächte)`,
             nightsSuffix: (n) => `${n} Nächte`,
             routeError: "Route konnte nicht aus der URL gelesen werden.",
@@ -115,7 +121,7 @@
             gridFailures: (failed, total, list) => `${failed} von ${total} Kalender-Anfragen fehlgeschlagen: ${list}`,
             checkingPrices: (done, total) => `Prüfe Preiszugehörigkeit & Zwischenstopp-Details: ${done}/${total}`,
             realPriceFailures: (failed, total) => `${failed} von ${total} echten Preisen konnten nicht geladen werden`,
-            from: "ab",
+            from: "Hin- und Rückflug ab",
             direct: "Direkt ab",
             oneStop: "1 Stopp ab",
             twoOrMoreStops: "2+ Stopps ab",
@@ -131,12 +137,13 @@
             localeSaveError: "Bitte Markt, Währung, Symbol und Locale ausfüllen.",
         },
         en: {
-            title: "Cheapest travel dates",
+            title: "Cheapest round-trip dates",
             settings: "Settings",
             searchRange: "Search range (months, max 12)",
             targetStay: "Target stay (weeks)",
             flexibility: "Flexibility (± %)",
             startSearch: "Start search",
+            searchAgain: "Search again",
             nightsRange: (min, max) => `(${min}-${max} nights)`,
             nightsSuffix: (n) => `${n} nights`,
             routeError: "Could not read the route from the URL.",
@@ -145,7 +152,7 @@
             gridFailures: (failed, total, list) => `${failed} of ${total} calendar requests failed: ${list}`,
             checkingPrices: (done, total) => `Checking price category & layover details: ${done}/${total}`,
             realPriceFailures: (failed, total) => `${failed} of ${total} real prices could not be loaded`,
-            from: "from",
+            from: "Round trip from",
             direct: "Direct from",
             oneStop: "1 stop from",
             twoOrMoreStops: "2+ stops from",
@@ -161,12 +168,13 @@
             localeSaveError: "Please fill in market, currency, symbol and locale.",
         },
         es: {
-            title: "Fechas de viaje más baratas",
+            title: "Fechas de ida y vuelta más baratas",
             settings: "Ajustes",
             searchRange: "Rango de búsqueda (meses, máx. 12)",
             targetStay: "Duración objetivo (semanas)",
             flexibility: "Flexibilidad (± %)",
             startSearch: "Iniciar búsqueda",
+            searchAgain: "Buscar de nuevo",
             nightsRange: (min, max) => `(${min}-${max} noches)`,
             nightsSuffix: (n) => `${n} noches`,
             routeError: "No se pudo leer la ruta desde la URL.",
@@ -175,7 +183,7 @@
             gridFailures: (failed, total, list) => `${failed} de ${total} solicitudes de calendario fallaron: ${list}`,
             checkingPrices: (done, total) => `Comprobando categoría de precio y detalles de escalas: ${done}/${total}`,
             realPriceFailures: (failed, total) => `${failed} de ${total} precios reales no se pudieron cargar`,
-            from: "desde",
+            from: "Ida y vuelta desde",
             direct: "Directo desde",
             oneStop: "1 escala desde",
             twoOrMoreStops: "2+ escalas desde",
@@ -191,12 +199,13 @@
             localeSaveError: "Por favor, complete mercado, moneda, símbolo y configuración regional.",
         },
         fr: {
-            title: "Dates de voyage les moins chères",
+            title: "Dates aller-retour les moins chères",
             settings: "Paramètres",
             searchRange: "Période de recherche (mois, max 12)",
             targetStay: "Durée du séjour visée (semaines)",
             flexibility: "Flexibilité (± %)",
             startSearch: "Lancer la recherche",
+            searchAgain: "Relancer la recherche",
             nightsRange: (min, max) => `(${min}-${max} nuits)`,
             nightsSuffix: (n) => `${n} nuits`,
             routeError: "Impossible de lire l'itinéraire depuis l'URL.",
@@ -205,7 +214,7 @@
             gridFailures: (failed, total, list) => `${failed} requêtes de calendrier sur ${total} ont échoué : ${list}`,
             checkingPrices: (done, total) => `Vérification de la catégorie de prix et des escales : ${done}/${total}`,
             realPriceFailures: (failed, total) => `${failed} prix réels sur ${total} n'ont pas pu être chargés`,
-            from: "à partir de",
+            from: "Aller-retour à partir de",
             direct: "Direct à partir de",
             oneStop: "1 escale à partir de",
             twoOrMoreStops: "2+ escales à partir de",
@@ -219,6 +228,37 @@
             localeSymbol: "Symbole (p. ex. €)",
             localeLocale: "Locale (p. ex. fr-FR)",
             localeSaveError: "Veuillez renseigner le marché, la devise, le symbole et la locale.",
+        },
+        ja: {
+            title: "最安値の往復日程",
+            settings: "設定",
+            searchRange: "検索範囲（月数、最大12）",
+            targetStay: "希望滞在期間（週）",
+            flexibility: "許容範囲（± %）",
+            startSearch: "検索開始",
+            searchAgain: "再検索",
+            nightsRange: (min, max) => `(${min}〜${max}泊)`,
+            nightsSuffix: (n) => `${n}泊`,
+            routeError: "URLから区間を読み取れませんでした。",
+            loading: (i, total, min, max) => `読み込み中 ${i}/${total} (${min}〜${max}泊)`,
+            doneNoResults: (total) => `完了：0件一致（${total}件のリクエスト）`,
+            gridFailures: (failed, total, list) => `${total}件中${failed}件のカレンダーリクエストが失敗しました：${list}`,
+            checkingPrices: (done, total) => `料金カテゴリと乗り継ぎ詳細を確認中：${done}/${total}`,
+            realPriceFailures: (failed, total) => `${total}件中${failed}件の実際の料金を読み込めませんでした`,
+            from: "往復",
+            direct: "直行",
+            oneStop: "経由1回",
+            twoOrMoreStops: "経由2回以上",
+            maxLayover: (h, m) => ` (最長乗り継ぎ ${h}時間${m}分)`,
+            couldNotLoad: "読み込めませんでした",
+            noResults: "選択した期間に一致する結果はありません",
+            priceSnapshotFrom: (dt) => `価格のスナップショット：${dt}`,
+            localeError: "市場/通貨を自動検出できませんでした。手動で入力してください：",
+            localeMarket: "市場（例：JP）",
+            localeCurrency: "通貨（例：JPY）",
+            localeSymbol: "記号（例：¥）",
+            localeLocale: "ロケール（例：ja-JP）",
+            localeSaveError: "市場、通貨、記号、ロケールをすべて入力してください。",
         },
     };
 
@@ -597,12 +637,12 @@
 
     const STYLE = `
     #sky-panel, #sky-panel * { box-sizing:border-box; }
-    #sky-panel { position:fixed; bottom:16px; right:16px; width:330px; max-height:90vh;
+    #sky-panel { position:fixed; bottom:16px; right:16px; width:330px; max-height:98vh;
       overflow:hidden;
       background:#ffffff; color:#1f2430; font:13px/1.45 -apple-system,Segoe UI,Roboto,sans-serif;
       z-index:999999; border:1px solid #e2e5ea; border-radius:12px;
       box-shadow:0 8px 24px rgba(20,30,50,0.12); }
-    #sky-panel-scroll { max-height:90vh; overflow-y:scroll; overflow-x:hidden; padding:16px;
+    #sky-panel-scroll { max-height:98vh; overflow-y:scroll; overflow-x:hidden; padding:16px;
       scrollbar-width:none; }
     #sky-panel-scroll::-webkit-scrollbar { display:none; }
     #sky-scroll-thumb { position:absolute; top:0; right:3px; width:6px; border-radius:3px;
@@ -619,23 +659,23 @@
     #sky-panel .sky-field label { color:#5b6472; }
     #sky-panel input { width:60px; padding:4px 6px; border:1px solid #d3d8e0; border-radius:6px;
       font:inherit; text-align:right; }
-    #sky-panel input:focus { outline:2px solid #2a7de1; outline-offset:1px; }
+    #sky-panel input:focus { outline:2px solid #0062e3; outline-offset:1px; }
     #sky-panel input[type="checkbox"] { width:auto; }
     #sky-manual-locale { margin-top:10px; padding-top:10px; border-top:1px solid #e2e5ea; }
     #sky-manual-locale .sky-field input { width:110px; text-align:left; }
     #sky-locale-error { color:#c0392b; font-size:12px; margin-top:8px; }
     #sky-start { width:100%; margin-top:14px; padding:9px; border:none; border-radius:8px;
-      background:#2a7de1; color:#fff; font:inherit; font-weight:600; cursor:pointer; }
+      background:#0062e3; color:#fff; font:inherit; font-weight:600; cursor:pointer; }
     #sky-start:hover { background:#1f66c0; }
-    #sky-status { margin-top:10px; color:#7a8290; font-size:12px; min-height:16px; white-space:nowrap;
+    #sky-status { margin-top:10px; color:#5b6472; font-size:12px; min-height:16px; white-space:nowrap;
       overflow:hidden; text-overflow:ellipsis; }
     #sky-status.sky-status-error { color:#c0392b; }
     #sky-progress-track { margin-top:6px; height:4px; border-radius:2px; background:#eef0f3; overflow:hidden; display:none; }
-    #sky-progress-bar { height:100%; width:0%; background:#2a7de1; transition:width .2s ease; }
+    #sky-progress-bar { height:100%; width:0%; background:#0062e3; transition:width .2s ease; }
     #sky-results { margin-top:6px; }
     .sky-card { display:block; margin-top:8px; padding:10px; border:1px solid #e2e5ea; border-radius:8px;
       background:#f8fafc; text-decoration:none; color:inherit; cursor:pointer; transition:border-color .15s ease, background .15s ease; }
-    .sky-card:hover { border-color:#2a7de1; background:#eef5fd; }
+    .sky-card:hover { border-color:#0062e3; background:#eef5fd; }
     .sky-card .sky-price-row { display:flex; align-items:center; gap:8px; }
     .sky-card .sky-rank { flex:0 0 auto; width:20px; height:20px; border-radius:50%; background:#e2e5ea; color:#5b6472;
       font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; }
@@ -645,9 +685,9 @@
     .sky-card .sky-real-prices .sky-chip { background:#eef0f3; border-radius:4px; padding:2px 6px; font-size:11px; color:#3a4250; white-space:nowrap; }
     .sky-card .sky-real-prices .sky-chip-muted { background:transparent; color:#b0b6bf; }
     .sky-card .sky-real-prices .sky-chip-best-price { color:#0a8a4a; font-weight:700; }
-    .sky-card .sky-real-prices .sky-chip-shortest-layover { outline:2px solid #2a7de1; outline-offset:-2px; }
-    .sky-loading { display:flex; align-items:center; gap:6px; color:#9aa2ad; font-size:11px; }
-    .sky-spinner { width:11px; height:11px; border-radius:50%; border:2px solid #e2e5ea; border-top-color:#2a7de1;
+    .sky-card .sky-real-prices .sky-chip-shortest-layover { outline:2px solid #0062e3; outline-offset:-2px; }
+    .sky-loading { display:flex; align-items:center; gap:6px; color:#6b7280; font-size:11px; }
+    .sky-spinner { width:11px; height:11px; border-radius:50%; border:2px solid #e2e5ea; border-top-color:#0062e3;
       animation: sky-spin 0.8s linear infinite; }
     @keyframes sky-spin { to { transform:rotate(360deg); } }
     @media (prefers-reduced-motion: reduce) { .sky-spinner { animation:none; } }
@@ -663,8 +703,10 @@
         statusEl.classList.toggle("sky-status-error", !!isError);
     }
     function setProgress(fraction) {
+        const percent = Math.round(fraction * 100);
         progressTrack.style.display = "block";
-        progressBar.style.width = `${Math.round(fraction * 100)}%`;
+        progressTrack.setAttribute("aria-valuenow", String(percent));
+        progressBar.style.width = `${percent}%`;
     }
     function hideProgress(delayMs) {
         setTimeout(() => {
@@ -683,10 +725,10 @@
         section.hidden = false;
         section.innerHTML = `
       <div id="sky-locale-error">${s.localeError}</div>
-      <div class="sky-field"><label>${s.localeMarket}</label><input id="sky-manual-market" type="text" maxlength="10"></div>
-      <div class="sky-field"><label>${s.localeCurrency}</label><input id="sky-manual-currency" type="text" maxlength="10"></div>
-      <div class="sky-field"><label>${s.localeSymbol}</label><input id="sky-manual-symbol" type="text" maxlength="10"></div>
-      <div class="sky-field"><label>${s.localeLocale}</label><input id="sky-manual-locale-input" type="text" maxlength="20"></div>
+      <div class="sky-field"><label for="sky-manual-market">${s.localeMarket}</label><input id="sky-manual-market" type="text" maxlength="10"></div>
+      <div class="sky-field"><label for="sky-manual-currency">${s.localeCurrency}</label><input id="sky-manual-currency" type="text" maxlength="10"></div>
+      <div class="sky-field"><label for="sky-manual-symbol">${s.localeSymbol}</label><input id="sky-manual-symbol" type="text" maxlength="10"></div>
+      <div class="sky-field"><label for="sky-manual-locale-input">${s.localeLocale}</label><input id="sky-manual-locale-input" type="text" maxlength="20"></div>
     `;
     }
 
@@ -718,21 +760,21 @@
         panel = document.createElement("div");
         panel.id = "sky-panel";
         panel.innerHTML = `
-      <div id="sky-panel-scroll">
+      <div id="sky-panel-scroll" tabindex="0">
         <h3>${s.title}</h3>
         <details id="sky-settings" open>
           <summary>${s.settings}</summary>
-          <div class="sky-field"><label>${s.searchRange}</label><input id="sky-range" type="number" min="1" max="12" value="6"></div>
-          <div class="sky-field"><label>${s.targetStay}</label><input id="sky-target-w" type="number" min="1" max="6" step="0.5" value="3"></div>
-          <div class="sky-field"><label>${s.flexibility} <span id="sky-nights-preview" style="color:#9aa2ad"></span></label><input id="sky-tolerance" type="number" min="0" max="100" value="15"></div>
+          <div class="sky-field"><label for="sky-range">${s.searchRange}</label><input id="sky-range" type="number" min="1" max="12" value="${DEFAULT_RANGE_MONTHS}"></div>
+          <div class="sky-field"><label for="sky-target-w">${s.targetStay}</label><input id="sky-target-w" type="number" min="1" max="6" step="0.5" value="${DEFAULT_TARGET_STAY_WEEKS}"></div>
+          <div class="sky-field"><label for="sky-tolerance">${s.flexibility} <span id="sky-nights-preview" style="color:#6b7280"></span></label><input id="sky-tolerance" type="number" min="0" max="100" value="${DEFAULT_FLEXIBILITY_PERCENT}"></div>
           <div id="sky-manual-locale" hidden></div>
           <button id="sky-start">${s.startSearch}</button>
         </details>
-        <div id="sky-status"></div>
-        <div id="sky-progress-track"><div id="sky-progress-bar"></div></div>
+        <div id="sky-status" role="status" aria-live="polite"></div>
+        <div id="sky-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="sky-progress-bar"></div></div>
         <div id="sky-results"></div>
       </div>
-      <div id="sky-scroll-thumb"></div>
+      <div id="sky-scroll-thumb" aria-hidden="true"></div>
     `;
         document.body.appendChild(panel);
         statusEl = panel.querySelector("#sky-status");
@@ -851,7 +893,7 @@
         const displayPrice = Number.isFinite(realPrice) ? realPrice : c.price;
         const formatHint = currencyFormatFromPayload(c.realStopPrices);
         return `
-          <a class="sky-card" data-idx="${i}" href="${skyscannerLink(origin, destination, c.outDate, c.inDate)}" target="_blank">
+          <a class="sky-card" data-idx="${i}" href="${skyscannerLink(origin, destination, c.outDate, c.inDate)}" target="_blank" rel="noopener noreferrer">
             <div class="sky-price-row">
               <span class="sky-rank">${i + 1}</span>
               <span class="sky-price"${c.quotedAt ? ` title="${s.priceSnapshotFrom(fmtDateTime(c.quotedAt))}"` : ""}>${s.from} ${formatPrice(displayPrice, formatHint)}</span>
@@ -1036,6 +1078,7 @@
         candidates.sort((a, b) => a.price - b.price);
         const gridFailureNote = failedPairs.length ? s.gridFailures(failedPairs.length, pairs.length, failedPairs.join(", ")) : "";
         renderResults(candidates, origin, destination);
+        panel.querySelector("#sky-start").textContent = s.searchAgain;
         if (!candidates.length) {
             setStatus(gridFailureNote || s.doneNoResults(pairs.length), Boolean(gridFailureNote));
             hideProgress(400);
