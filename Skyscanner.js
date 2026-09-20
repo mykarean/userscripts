@@ -1,9 +1,10 @@
 // ==UserScript==
 // @name         Cheapest Round-Trip Dates Finder
 // @description  Automatically scans months of date combinations for the cheapest round trip and verifies real prices/layovers - automation Skyscanner's own flexible-date search doesn't offer. Just open a route (origin + destination) - no dates needed.
-// @version      20260920.1
+// @version      20260920.2
 // @author       mykarean
-// @include      /^https:\/\/www\.skyscanner\.[a-z.]+\/transport\/(flights|fluge|vols|vuelos)\/.+/
+// @icon         https://www.skyscanner.com/images/opengraph_v1.png
+// @include      /^https:\/\/www\.skyscanner\.[a-z.]+\/transport\/(flights|fluge|vols|vuelos)\/[a-z0-9-]+\/[a-z0-9-]+\/?(\?.*)?$/
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_deleteValue
@@ -18,6 +19,7 @@
     "use strict";
 
     let LOCALE;
+    const DEBUG = false;
 
     const DEFAULT_RANGE_MONTHS = 6;
     const DEFAULT_TARGET_STAY_WEEKS = 3;
@@ -385,6 +387,23 @@
         const hour = Number(ts.slice(8, 10));
         const minute = Number(ts.slice(10, 12));
         return new Date(year, month - 1, day, hour, minute);
+    }
+
+    // Debug helper: scans a raw grid response for its cheapest cell regardless of the nights
+    // window, so two runs can be compared to see whether the underlying price data itself
+    // changed between them (independent of any night-count filtering).
+    function gridMinPrice(gridResponse) {
+        const grid = gridResponse?.PriceGrids?.Grid;
+        if (!grid) return null;
+        let min = Infinity;
+        for (let col = 0; col < (grid[0]?.length || 0); col++) {
+            for (let row = 0; row < grid.length; row++) {
+                const cell = grid[row][col];
+                const price = Math.min(cell?.Direct?.Price ?? Infinity, cell?.Indirect?.Price ?? Infinity);
+                if (price < min) min = price;
+            }
+        }
+        return Number.isFinite(min) ? min : null;
     }
 
     function collectCandidates(gridResponse, todayDate, horizonDate, minNights, maxNights, acc) {
@@ -1052,6 +1071,10 @@
             Number(panel.querySelector("#sky-tolerance").value),
         );
         resultsEl.innerHTML = "";
+        logDebug(
+            DEBUG,
+            `[Sky] Search start: ${origin}→${destination}, rangeMonths=${rangeMonths}, targetNights=${targetNights}, nightsWindow=[${minNights},${maxNights}]`,
+        );
 
         const { pairs, today, endYM } = neededPairs(rangeMonths, minNights, maxNights);
         const horizonDate = toDate(endYM, daysInMonth(endYM));
@@ -1066,7 +1089,12 @@
             try {
                 const result = await fetchGrid(origin, destination, outYM, inYM);
                 fromCache = result.fromCache;
+                logDebug(
+                    DEBUG,
+                    `[Sky] Grid ${ymKey(outYM)}→${ymKey(inYM)}: ${fromCache ? "from cache" : "fresh fetch"}, raw min price (any nights)=${gridMinPrice(result.data)}`,
+                );
                 collectCandidates(result.data, today, horizonDate, minNights, maxNights, candidates);
+                logDebug(DEBUG, `[Sky]   candidates so far: ${candidates.length}`);
             } catch (err) {
                 failedPairs.push(`${ymKey(outYM)}→${ymKey(inYM)}`);
                 console.warn(`[Sky] Grid request failed (${ymKey(outYM)}→${ymKey(inYM)}):`, err);
@@ -1076,6 +1104,13 @@
 
         setProgress(1);
         candidates.sort((a, b) => a.price - b.price);
+        if (DEBUG) {
+            const top10Str = candidates
+                .slice(0, 10)
+                .map((c, i) => `${i + 1}. ${fmtDate(c.outDate)}→${fmtDate(c.inDate)} (${c.nights}n) ${c.price}`)
+                .join(" | ");
+            logDebug(DEBUG, `[Sky] Search done: ${candidates.length} candidates total, top10: ${top10Str}`);
+        }
         const gridFailureNote = failedPairs.length ? s.gridFailures(failedPairs.length, pairs.length, failedPairs.join(", ")) : "";
         renderResults(candidates, origin, destination);
         panel.querySelector("#sky-start").textContent = s.searchAgain;
