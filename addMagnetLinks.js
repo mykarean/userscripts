@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            Magnet Links & Torrent Search Filter
-// @description     Adds magnet links to BT4G, Limetorrents, BT1207, filtering of search results by minimum and maximum size (BT4G only), automatic reload in case of server errors every 5 minutes
-// @version         20260624
+// @description     Adds magnet links to BT4G, Limetorrents, BT1207, filtering of search results by minimum and maximum size (BT4G only), grouping and one-click opening of similarly-sized items when sorted by size (BT4G only), Cloudflare block detection, automatic reload in case of server errors every 5 minutes
+// @version         20260927
 // @author          mykarean
 // @match           *://bt4gprx.com/*
 // @match           *://*.limetorrents.fun/search/all/*
@@ -72,6 +72,19 @@ function setStylesAndFavicon() {
             outline: 2px solid #ff3f00;
             text-decoration: none;
         }
+        .magnet-link-error {
+            display: inline-flex;
+            align-items: center;
+            margin-right: 10px;
+            border-radius: 8px;
+            padding: 1px 10px 3px 10px;
+            background: #4a1414;
+            font-family: system-ui,-apple-system,sans-serif;
+            font-size: 15px;
+            font-weight: 500;
+            color: #ff8080;
+            cursor: help;
+        }
     `);
 
     // Specific modifications for BT4G
@@ -124,12 +137,29 @@ function getElementByText(tag, regex, item = 0) {
     return null;
 }
 
+class CloudflareBlockedError extends Error {
+    constructor(message = "Blocked by Cloudflare") {
+        super(message);
+        this.name = "CloudflareBlockedError";
+    }
+}
+
+function isCloudflareChallenge(html) {
+    return /Just a moment|Enable JavaScript and cookies to continue|cf-browser-verification|Attention Required! \| Cloudflare|cf_chl_opt|Checking your browser before accessing/i.test(html);
+}
+
 async function requestNativeFetch(url) {
     const response = await fetch(url, {
         credentials: "same-origin",
     });
+    // Read the body even on non-ok responses: Cloudflare challenges can come back as
+    // a normal 200 with challenge HTML, or as a 403/503 - either way we want to inspect it
+    const text = await response.text();
+
+    if (isCloudflareChallenge(text)) throw new CloudflareBlockedError();
     if (!response.ok) throw new Error(`Request failed: HTTP ${response.status}`);
-    return await response.text();
+
+    return text;
 }
 
 function requestGM_XHR(details) {
@@ -162,6 +192,11 @@ function addMenuCommand() {
     const hoverFetchMenuText = `${hoverFetchState ? "✔️" : "❌"} Fetch Magnet on Hover`;
 
     GM_registerMenuCommand(hoverFetchMenuText, toggleHoverFetch);
+
+    const markSimilarSizeState = GM_getValue("markSimilarSize", true);
+    const markSimilarSizeMenuText = `${markSimilarSizeState ? "✔️" : "❌"} Mark Similar Sized Items`;
+
+    GM_registerMenuCommand(markSimilarSizeMenuText, toggleMarkSimilarSize);
 }
 
 // Toggle function
@@ -225,6 +260,19 @@ function toggleHoverFetch() {
     }, 2000);
 }
 
+function toggleMarkSimilarSize() {
+    const currentState = GM_getValue("markSimilarSize", true);
+    const newState = !currentState;
+    GM_setValue("markSimilarSize", newState);
+
+    showToast(`Mark Similar Sized Items: ${newState ? "ON" : "OFF"}`);
+
+    // Reload page to apply changes
+    setTimeout(() => {
+        location.reload();
+    }, 2000);
+}
+
 // ---------------------------------------------------------
 // search results handling
 // ---------------------------------------------------------
@@ -271,6 +319,7 @@ function observeNewSearchResults() {
 
         if (hasNewResults) {
             itemFilterBySize();
+            markSimilarSizedItems();
         }
     });
 
@@ -419,6 +468,8 @@ async function fetchWithRetry(url, retries = 3, delayMs = 500) {
         try {
             return await requestNativeFetch(url);
         } catch (error) {
+            // Retrying won't help against a Cloudflare challenge, fail fast instead
+            if (error instanceof CloudflareBlockedError) throw error;
             if (attempt === retries) throw error;
             console.warn(`Attempt ${attempt} failed (${error.message}), retrying in ${delayMs}ms...`);
             await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -451,6 +502,9 @@ async function processLinksInSearchResultsBt4g(link) {
         }
     } catch (error) {
         console.error("Error getting magnet link:", error);
+        if (error instanceof CloudflareBlockedError) {
+            insertMagnetError(link, "Blocked by Cloudflare");
+        }
     }
 }
 
@@ -512,7 +566,30 @@ function processLinksInSearchResultsLimeTorrents(link) {
     }
 }
 
+function insertMagnetError(link, message) {
+    // Update an already-shown error instead of stacking duplicates on retry
+    const existing = link.parentNode.querySelector(".magnet-link-error");
+    if (existing) {
+        existing.textContent = `⚠️ ${message}`;
+        existing.title = message;
+        return;
+    }
+
+    const errorSpan = document.createElement("span");
+    errorSpan.classList.add("magnet-link-error");
+    errorSpan.textContent = `⚠️ ${message}`;
+    errorSpan.title = message;
+    errorSpan.addEventListener("click", () => {
+        showToast("Reload the page to pass the Cloudflare check");
+    });
+
+    link.parentNode.insertBefore(errorSpan, link);
+}
+
 function insertMagnetLink(link, hash, torrentName = "") {
+    // Remove a stale error indicator in case a retry (hover/group-open) now succeeds
+    link.parentNode.querySelector(".magnet-link-error")?.remove();
+
     // Get configuration value to determine if display name should be included
     const includeDN = GM_getValue("includeDN", true);
     let magnetLink = `magnet:?xt=urn:btih:${hash}`;
@@ -548,6 +625,123 @@ function extractHashFromUrl(href) {
     const hashRegex = /(^|\/|&|-|\.|\?|=|:)([a-fA-F0-9]{40})/;
     const matches = href.match(hashRegex);
     return matches ? matches[2] : null;
+}
+
+// ---------------------------------------------------------
+// similar size marking (orderby=size)
+// ---------------------------------------------------------
+
+const SIMILAR_SIZE_GROUP_SPAN_LIMIT = 0.05; // max difference from the group's (largest) starting item
+
+function parseSize(text) {
+    const match = text.match(/^([\d.]+)([A-Za-z]+)$/);
+    if (!match) return null;
+    return { value: parseFloat(match[1]), unit: match[2] };
+}
+
+function sizeDiff(a, b) {
+    return Math.round(Math.abs(a.value - b.value) * 100) / 100;
+}
+
+// Cycled per group so items belonging to different groups of similarly-sized
+// neighbors can be told apart even when groups are adjacent in the list
+const SIMILAR_SIZE_GROUP_COLORS = ["#ffb300", "#26a69a", "#ab47bc", "#42a5f5", "#ef5350", "#8d6e63"];
+
+async function openSimilarSizeGroup(groupId) {
+    const items = Array.from(document.querySelectorAll(`.similar-size-badge[data-group="${groupId}"]`))
+        .map((badge) => badge.closest(".notion-list-item"))
+        .filter(Boolean);
+
+    // Fetch magnet links that haven't been loaded yet (e.g. "Fetch Magnet on Hover" mode)
+    await Promise.all(
+        items.map(async (item) => {
+            if (item.querySelector("a.magnet-link")) return;
+
+            const originalLink = item.querySelector('a[href*="/magnet/"]:not([href^="magnet:"])');
+            if (originalLink) {
+                await processLinksInSearchResultsBt4g(originalLink);
+            }
+        })
+    );
+
+    items.forEach((item, index) => {
+        const link = item.querySelector("a.magnet-link");
+        if (link) {
+            setTimeout(() => link.click(), index * 100);
+        }
+    });
+}
+
+function addSimilarSizeBadge(sizeElement, label, color, groupId) {
+    if (sizeElement.parentElement.querySelector(".similar-size-badge")) return;
+
+    const badge = document.createElement("span");
+    badge.className = "similar-size-badge";
+    badge.textContent = label;
+    badge.style.background = color;
+    badge.dataset.group = groupId;
+    badge.title = "Similar size to other item(s) (group " + label + ") - click to open all their magnet links";
+    badge.addEventListener("click", (event) => {
+        event.stopPropagation();
+        openSimilarSizeGroup(groupId);
+    });
+    sizeElement.after(badge);
+}
+
+function markSimilarSizedItems() {
+    if (hostname !== bt4gURL || location.pathname !== "/search") return;
+    if (new URLSearchParams(location.search).get("orderby") !== "size") return;
+    if (!GM_getValue("markSimilarSize", true)) return;
+
+    if (!document.getElementById("similar-size-styles")) {
+        GM_addStyle(`
+        .similar-size-badge {
+            display: inline-block;
+            margin-left: 5px;
+            padding: 0 5px;
+            font-size: 11px;
+            font-weight: 600;
+            line-height: 15px;
+            border-radius: 8px;
+            color: #000000;
+            vertical-align: middle;
+            cursor: pointer;
+        }
+        `).setAttribute("id", "similar-size-styles");
+    }
+
+    const sizeElements = Array.from(document.querySelectorAll("b.cpill"));
+
+    // Remove previous badges before re-evaluating (list may have changed)
+    document.querySelectorAll(".similar-size-badge").forEach((badge) => badge.remove());
+
+    // Results are sorted by size, so items with similar sizes form consecutive
+    // chains; each chain gets its own label/color so adjacent chains stay distinguishable
+    let groupIndex = 0;
+    let i = 0;
+    while (i < sizeElements.length - 1) {
+        const anchor = parseSize(sizeElements[i].innerText.trim());
+        let j = i;
+
+        while (j + 1 < sizeElements.length) {
+            const next = parseSize(sizeElements[j + 1].innerText.trim());
+            if (!anchor || !next || anchor.unit !== next.unit) break;
+            if (sizeDiff(anchor, next) > SIMILAR_SIZE_GROUP_SPAN_LIMIT) break;
+
+            j++;
+        }
+
+        if (j > i) {
+            const label = String.fromCharCode(65 + (groupIndex % 26));
+            const color = SIMILAR_SIZE_GROUP_COLORS[groupIndex % SIMILAR_SIZE_GROUP_COLORS.length];
+            for (let k = i; k <= j; k++) {
+                addSimilarSizeBadge(sizeElements[k], label, color, groupIndex);
+            }
+            groupIndex++;
+        }
+
+        i = j + 1;
+    }
 }
 
 // ---------------------------------------------------------
@@ -806,6 +1000,7 @@ async function main() {
     // handle search results
     if (/\/search/.test(currentPath)) {
         itemFilterBySize();
+        markSimilarSizedItems();
         addClickAllMagnetLinks();
         await processLinksInSearchResults();
 
