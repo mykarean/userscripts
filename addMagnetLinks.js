@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            Magnet Links & Torrent Search Filter
 // @description     Adds magnet links to BT4G, Limetorrents, BT1207, filtering of search results by minimum and maximum size (BT4G only), grouping and one-click opening of similarly-sized items when sorted by size (BT4G only), Cloudflare block detection, automatic reload in case of server errors every 5 minutes
-// @version         20260927
+// @version         20261011
 // @author          mykarean
 // @match           *://bt4gprx.com/*
 // @match           *://*.limetorrents.fun/search/all/*
@@ -52,7 +52,8 @@ function setStylesAndFavicon() {
             height: 20px;
             transition: filter 0.2s ease;
         }
-        a.magnet-link {
+        a.magnet-link,
+        a.magnet-link-pending {
             display: inline-flex;
             align-items: center;
             margin-right: 10px;
@@ -72,12 +73,26 @@ function setStylesAndFavicon() {
             outline: 2px solid #ff3f00;
             text-decoration: none;
         }
+        a.magnet-link-pending {
+            background: #3a3a3a;
+            color: #9a9a9a;
+            cursor: default;
+        }
+        a.magnet-link-pending .magnet-link-img {
+            cursor: default;
+            filter: grayscale(100%) opacity(0.4);
+        }
+        a.magnet-link-pending.is-queued {
+            cursor: progress;
+        }
         .magnet-link-error {
             display: inline-flex;
             align-items: center;
+            box-sizing: border-box;
             margin-right: 10px;
             border-radius: 8px;
-            padding: 1px 10px 3px 10px;
+            padding: 0 10px;
+            line-height: 1;
             background: #4a1414;
             font-family: system-ui,-apple-system,sans-serif;
             font-size: 15px;
@@ -90,7 +105,9 @@ function setStylesAndFavicon() {
     // Specific modifications for BT4G
     if (hostname === bt4gURL && location.pathname === "/search") {
         GM_addStyle(`
-            a.magnet-link {
+            a.magnet-link,
+            a.magnet-link-pending,
+            .magnet-link-error {
                 vertical-align: top;
             }
             .notion-list-item-title a:hover {
@@ -144,6 +161,13 @@ class CloudflareBlockedError extends Error {
     }
 }
 
+class ContentDeletedError extends Error {
+    constructor(message = "Deleted on request") {
+        super(message);
+        this.name = "ContentDeletedError";
+    }
+}
+
 function isCloudflareChallenge(html) {
     return /Just a moment|Enable JavaScript and cookies to continue|cf-browser-verification|Attention Required! \| Cloudflare|cf_chl_opt|Checking your browser before accessing/i.test(html);
 }
@@ -157,6 +181,8 @@ async function requestNativeFetch(url) {
     const text = await response.text();
 
     if (isCloudflareChallenge(text)) throw new CloudflareBlockedError();
+    // Comes as a 404, but permanent - retrying is pointless
+    if (/On request, content has been deleted/i.test(text)) throw new ContentDeletedError();
     if (!response.ok) throw new Error(`Request failed: HTTP ${response.status}`);
 
     return text;
@@ -335,6 +361,11 @@ async function processLinksInSearchResults() {
     const links = Array.from(getSearchResultLinks());
     const hoverFetch = GM_getValue("hoverFetch", false);
 
+    // Show an inactive button right away so the layout doesn't shift when the data arrives
+    if (hostname !== limetorrentsURL) {
+        links.forEach(insertMagnetPlaceholder);
+    }
+
     if (hoverFetch) {
         // Add hover event listeners to fetch on hover
         links.forEach((link) => {
@@ -469,7 +500,7 @@ async function fetchWithRetry(url, retries = 3, delayMs = 500) {
             return await requestNativeFetch(url);
         } catch (error) {
             // Retrying won't help against a Cloudflare challenge, fail fast instead
-            if (error instanceof CloudflareBlockedError) throw error;
+            if (error instanceof CloudflareBlockedError || error instanceof ContentDeletedError) throw error;
             if (attempt === retries) throw error;
             console.warn(`Attempt ${attempt} failed (${error.message}), retrying in ${delayMs}ms...`);
             await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -477,11 +508,21 @@ async function fetchWithRetry(url, retries = 3, delayMs = 500) {
     }
 }
 
-async function processLinksInSearchResultsBt4g(link) {
+function processLinksInSearchResultsBt4g(link) {
+    return withInflight(link, () => fetchMagnetBt4g(link));
+}
+
+function processLinksInSearchResultsBt1207(link) {
+    return withInflight(link, () => fetchMagnetBt1207(link));
+}
+
+async function fetchMagnetBt4g(link) {
     try {
         // Skip if magnet link exists
         const magnetLink = link.getAttribute("data-magnet-added");
         if (magnetLink === "true") return;
+        // Known-deleted: don't ask again on every hover/rescan
+        if (link.getAttribute("data-magnet-deleted") === "true") return;
 
         // Fetch the details page content
         // requestGM_XHR() is not working with Cloudflare protection anymore
@@ -492,23 +533,27 @@ async function processLinksInSearchResultsBt4g(link) {
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, "text/html");
         const downloadLink = doc.querySelector('a[href^="//downloadtorrentfile.com/hash/"]');
-        if (downloadLink) {
-            const hash = extractHashFromUrl(downloadLink.href.split("/").pop().split("?")[0]);
-            const torrentName = link?.textContent;
-            if (hash) {
-                insertMagnetLink(link, hash, torrentName);
-                link.setAttribute("data-magnet-added", "true");
-            }
+        const hash = downloadLink ? extractHashFromUrl(downloadLink.href.split("/").pop().split("?")[0]) : null;
+        if (hash) {
+            insertMagnetLink(link, hash, link?.textContent);
+            link.setAttribute("data-magnet-added", "true");
+        } else {
+            insertMagnetError(link, "No magnet found", true);
         }
     } catch (error) {
         console.error("Error getting magnet link:", error);
         if (error instanceof CloudflareBlockedError) {
-            insertMagnetError(link, "Blocked by Cloudflare");
+            insertMagnetError(link, "Blocked by Cloudflare", false, "Reload the page to pass the Cloudflare check");
+        } else if (error instanceof ContentDeletedError) {
+            link.setAttribute("data-magnet-deleted", "true");
+            insertMagnetError(link, error.message);
+        } else {
+            insertMagnetError(link, "Failed to load magnet", true);
         }
     }
 }
 
-async function processLinksInSearchResultsBt1207(link) {
+async function fetchMagnetBt1207(link) {
     try {
         // Skip if magnet link exists
         const magnetLink = link.getAttribute("data-magnet-added");
@@ -566,21 +611,122 @@ function processLinksInSearchResultsLimeTorrents(link) {
     }
 }
 
-function insertMagnetError(link, message) {
+// Placeholder anchor per result link (BT4G/BT1207: magnet needs a fetch first)
+const magnetPlaceholders = new WeakMap();
+// Running fetch per result link, so hover, click and group-open share one request
+const inflightFetches = new WeakMap();
+
+function getPlaceholder(link) {
+    const placeholder = magnetPlaceholders.get(link);
+    return placeholder?.isConnected ? placeholder : null;
+}
+
+function removePlaceholder(link) {
+    getPlaceholder(link)?.remove();
+    magnetPlaceholders.delete(link);
+}
+
+function clearQueuedOpen(link) {
+    const placeholder = getPlaceholder(link);
+    if (!placeholder) return;
+    delete placeholder.dataset.openWhenReady;
+    placeholder.classList.remove("is-queued");
+}
+
+function withInflight(link, fn) {
+    const running = inflightFetches.get(link);
+    if (running) return running;
+
+    const promise = fn().finally(() => {
+        inflightFetches.delete(link);
+        // Fetch ended without a magnet (error/no hash): drop a queued click
+        if (link.getAttribute("data-magnet-added") !== "true") clearQueuedOpen(link);
+    });
+    inflightFetches.set(link, promise);
+    return promise;
+}
+
+function loadMagnet(link) {
+    if (hostname === bt4gURL) return processLinksInSearchResultsBt4g(link);
+    if (hostname.includes("bt1207")) return processLinksInSearchResultsBt1207(link);
+}
+
+function createMagnetAnchor(pending, link) {
+    const anchor = document.createElement("a");
+    anchor.classList.add(pending ? "magnet-link-pending" : "magnet-link");
+
+    const imgElement = document.createElement("img");
+    imgElement.src = magnetImage;
+    imgElement.classList.add("magnet-link-img");
+
+    anchor.append(imgElement, document.createTextNode("Magnet Link"));
+
+    anchor.addEventListener("click", function (event) {
+        if (anchor.classList.contains("magnet-link-pending")) {
+            // Not ready yet: open automatically once the data is there
+            event.preventDefault();
+            anchor.dataset.openWhenReady = "true";
+            anchor.classList.add("is-queued");
+            loadMagnet(link);
+            return;
+        }
+        imgElement.style.filter = "grayscale(100%) opacity(0.5)";
+    });
+
+    // Hovering the button fetches just like hovering the title (shares the in-flight request)
+    anchor.addEventListener("mouseover", function () {
+        if (anchor.classList.contains("magnet-link-pending")) loadMagnet(link);
+    });
+
+    return anchor;
+}
+
+function insertMagnetPlaceholder(link) {
+    if (link.getAttribute("data-magnet-added") === "true" || getPlaceholder(link)) return;
+    // Keep an existing error indicator instead of replacing it on every re-scan
+    if (link.previousElementSibling?.classList.contains("magnet-link-error")) return;
+
+    const placeholder = createMagnetAnchor(true, link);
+    magnetPlaceholders.set(link, placeholder);
+    link.parentNode.insertBefore(placeholder, link);
+}
+
+// retryable: transient failure (e.g. HTTP 404 from BT4G's backend) - clicking the error retries
+// hint: toast shown on click of a non-retryable error
+function insertMagnetError(link, message, retryable = false, hint = "") {
+    // The placeholder makes way for the error indicator; keep its width so the title doesn't jump
+    const placeholderRect = getPlaceholder(link)?.getBoundingClientRect();
+    removePlaceholder(link);
+
     // Update an already-shown error instead of stacking duplicates on retry
     const existing = link.parentNode.querySelector(".magnet-link-error");
+    const text = `⚠️ ${message}${retryable ? " - click to retry" : ""}`;
     if (existing) {
-        existing.textContent = `⚠️ ${message}`;
+        existing.textContent = text;
         existing.title = message;
+        existing.dataset.retryable = String(retryable);
+        existing.dataset.hint = hint;
         return;
     }
 
     const errorSpan = document.createElement("span");
     errorSpan.classList.add("magnet-link-error");
-    errorSpan.textContent = `⚠️ ${message}`;
+    errorSpan.textContent = text;
     errorSpan.title = message;
+    errorSpan.dataset.retryable = String(retryable);
+    errorSpan.dataset.hint = hint;
+    if (placeholderRect?.width) {
+        errorSpan.style.minWidth = `${placeholderRect.width}px`;
+        errorSpan.style.height = `${placeholderRect.height}px`;
+    }
     errorSpan.addEventListener("click", () => {
-        showToast("Reload the page to pass the Cloudflare check");
+        if (errorSpan.dataset.retryable === "true") {
+            errorSpan.remove();
+            insertMagnetPlaceholder(link);
+            getPlaceholder(link)?.click();
+        } else if (errorSpan.dataset.hint) {
+            showToast(errorSpan.dataset.hint);
+        }
     });
 
     link.parentNode.insertBefore(errorSpan, link);
@@ -600,24 +746,22 @@ function insertMagnetLink(link, hash, torrentName = "") {
         magnetLink += `&dn=${encodedName}`;
     }
 
-    const newLink = document.createElement("a");
-    newLink.classList.add("magnet-link");
+    // Activate the placeholder in place (no layout shift), otherwise insert a new anchor
+    const placeholder = getPlaceholder(link);
+    if (placeholder) {
+        const openWhenReady = placeholder.dataset.openWhenReady === "true";
+        delete placeholder.dataset.openWhenReady;
+        placeholder.classList.remove("magnet-link-pending", "is-queued");
+        placeholder.classList.add("magnet-link");
+        placeholder.href = magnetLink;
+        magnetPlaceholders.delete(link);
+
+        if (openWhenReady) placeholder.click();
+        return;
+    }
+
+    const newLink = createMagnetAnchor(false, link);
     newLink.href = magnetLink;
-    newLink.addEventListener("click", function () {
-        imgElement.style.filter = "grayscale(100%) opacity(0.5)";
-    });
-
-    const imgElement = document.createElement("img");
-    imgElement.src = magnetImage;
-    imgElement.classList.add("magnet-link-img");
-
-    // Create a text node after the image
-    const textNode = document.createTextNode("Magnet Link");
-
-    // Append image first, then text
-    newLink.appendChild(imgElement);
-    newLink.appendChild(textNode);
-
     link.parentNode.insertBefore(newLink, link);
 }
 
