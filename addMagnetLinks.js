@@ -98,7 +98,12 @@ function setStylesAndFavicon() {
             font-size: 15px;
             font-weight: 500;
             color: #ff8080;
-            cursor: help;
+            cursor: default;
+        }
+        /* Clickable: retry or Cloudflare hint */
+        .magnet-link-error[data-retryable="true"],
+        .magnet-link-error[data-hint]:not([data-hint=""]) {
+            cursor: pointer;
         }
     `);
 
@@ -703,7 +708,7 @@ function insertMagnetError(link, message, retryable = false, hint = "") {
     const text = `⚠️ ${message}${retryable ? " - click to retry" : ""}`;
     if (existing) {
         existing.textContent = text;
-        existing.title = message;
+        existing.title = hint;
         existing.dataset.retryable = String(retryable);
         existing.dataset.hint = hint;
         return;
@@ -712,7 +717,8 @@ function insertMagnetError(link, message, retryable = false, hint = "") {
     const errorSpan = document.createElement("span");
     errorSpan.classList.add("magnet-link-error");
     errorSpan.textContent = text;
-    errorSpan.title = message;
+    // Tooltip only if it adds something beyond the badge text
+    errorSpan.title = hint;
     errorSpan.dataset.retryable = String(retryable);
     errorSpan.dataset.hint = hint;
     if (placeholderRect?.width) {
