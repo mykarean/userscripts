@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            IMDb with additional ratings
 // @description     Adds additional ratings (TMDB, Douban, Metacritic, Rotten Tomatoes, MyAnimeList) to imdb.com for movies and series. These can be activated or deactivated individually in the extension's configuration menu, which is accessible via the Tampermonkey menu. The extension also allows you to copy movie metadata by simply clicking on the runtime below the movie title.
-// @version         20260518
+// @version         20261026
 // @author          mykarean
 // @icon            http://imdb.com/favicon.ico
 // @match           https://*.imdb.com/title/*
@@ -12,6 +12,7 @@
 // @connect         metacritic.com
 // @connect         rottentomatoes.com
 // @connect         jikan.moe
+// @connect         myanimelist.net
 // @grant           GM_getValue
 // @grant           GM_setValue
 // @grant           GM_addStyle
@@ -35,8 +36,7 @@ const UNDEFINED_VALUE = "X";
 const INITIAL_VALUE = 0;
 
 // Timeouts in milliseconds
-const TIMEOUT_GM_XMLHTTP_REQUEST = 20000;
-const FETCH_TIMEOUT = 10000;
+const TIMEOUT_GM_XMLHTTP_REQUEST = 10000;
 const WARN_TIMER_DELAY = 5000;
 // Max pixel height before title font size is reduced to fit a single line
 const TITLE_MAX_HEIGHT = 58;
@@ -430,8 +430,9 @@ function addWarningBubble(badge, message) {
 
 function gmErrorHandlers(reject, label) {
     return {
-        onerror: () => {
-            console.error(`${label}: Request Error.`);
+        onerror: (response) => {
+            // response.error holds the reason from the userscript manager (e.g. domain not allowed via @connect)
+            console.error(`${label}: Request Error.`, response?.error ?? response);
             reject("Request Error");
         },
         onabort: () => {
@@ -954,84 +955,93 @@ function addRottenTomatoesRatingBadge() {
 
 // -----------------------------------------------------------------------------------------------------
 // MyAnimeList
-// Source:  Jikan API (jikan.moe) · anime lookup by MAL ID or title search
-// Depends: Wikidata → myAnimeListId (P4086), fallback: title search (uses TMDB english title)
+// Source:  HTML crawling (myanimelist.net) · score and vote count of the anime page, Jikan API (jikan.moe) as backup
+// Depends: Wikidata → myAnimeListId (P4086), fallback: myanimelist.net title search (title, release year, media type)
 // -----------------------------------------------------------------------------------------------------
 // wikidata solution inspired by IMDb Scout Mod
 
-let myAnimeListDataByImdbIdPromise = null;
-async function getMyAnimeListDataByImdbId() {
-    // to execute only once
-    if (myAnimeListDataByImdbIdPromise) return myAnimeListDataByImdbIdPromise;
-
-    // only if genre is anime
-    const genreAnime = document.querySelector(".ipc-chip-list__scroller")?.textContent.includes("Anime");
-    if (!genreAnime) return null;
-
-    // only if enabled in settings
-    const configured = await GM_getValue("MyAnimeList", true);
-    if (!configured) return null;
-
-    function fetchMyAnimeListData(myAnimeListId) {
-        return new Promise((resolve, reject) => {
-            const url = "https://api.jikan.moe/v4/anime/" + myAnimeListId;
-            GM_xmlhttpRequest({
-                method: "GET",
-                timeout: TIMEOUT_GM_XMLHTTP_REQUEST,
-                url: url,
-                headers: { "User-Agent": USER_AGENT },
-                onload: (response) => {
-                    try {
-                        if (response.status !== 200) {
-                            console.error(`MyAnimeList: HTTP Error: ${response.status}`);
-                            reject(`HTTP Error ${response.status}`);
-                            return;
-                        }
-                        const result = JSON.parse(response.responseText);
-                        const rating = result.data.score;
-                        if (!isNaN(rating) && rating > 0) {
-                            const malData = {
-                                source: "MyAnimeList",
-                                rating: Number(rating).toLocaleString(undefined, {
-                                    minimumFractionDigits: 1,
-                                    maximumFractionDigits: 1,
-                                }),
-                                voteCount: result.data.scored_by?.toLocaleString(),
-                                url: result.data.url,
-                            };
-                            console.log("MyAnimeList:", malData);
-                            if (VERBOSE_LOGGING) console.log("MyAnimeList (raw):", result.data);
-                            resolve(malData);
-                        } else {
-                            reject("Invalid rating");
-                        }
-                    } catch (e) {
-                        console.error("MyAnimeList: Parse error.", e);
-                        resolve({
-                            source: "MyAnimeList",
-                            rating: INITIAL_VALUE,
-                            voteCount: INITIAL_VALUE,
-                            url: `https://myanimelist.net/anime/${myAnimeListId}`,
-                            error: "Parse error",
-                        });
-                    }
-                },
-                ...gmErrorHandlers(reject, "MyAnimeList"),
-            });
+function fetchMyAnimeListPage(myAnimeListId) {
+    return new Promise((resolve, reject) => {
+        const url = `https://myanimelist.net/anime/${myAnimeListId}`;
+        GM_xmlhttpRequest({
+            method: "GET",
+            url,
+            timeout: TIMEOUT_GM_XMLHTTP_REQUEST,
+            headers: { "User-Agent": USER_AGENT },
+            onload: (response) => {
+                if (response.status < 200 || response.status >= 300) {
+                    reject(`HTTP Error ${response.status}`);
+                    return;
+                }
+                const doc = new DOMParser().parseFromString(response.responseText, "text/html");
+                const rating = parseFloat(doc.querySelector('[itemprop="ratingValue"]')?.textContent);
+                const voteCount = parseInt(doc.querySelector('[itemprop="ratingCount"]')?.textContent);
+                // no score yet (e.g. not aired)
+                if (isNaN(rating) || rating <= 0) {
+                    resolve({ source: "MyAnimeList", rating: INITIAL_VALUE, voteCount: INITIAL_VALUE, url });
+                    return;
+                }
+                const malData = {
+                    source: "MyAnimeList",
+                    rating: rating.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+                    voteCount: isNaN(voteCount) ? undefined : voteCount.toLocaleString(),
+                    url,
+                };
+                console.log("MyAnimeList:", malData);
+                resolve(malData);
+            },
+            ...gmErrorHandlers(reject, `MyAnimeList (${url})`),
         });
-    }
+    });
+}
 
-    myAnimeListDataByImdbIdPromise = (async () => {
-        const { myAnimeListId } = await getWikidataIds();
-
-        if (myAnimeListId !== "") {
-            return fetchMyAnimeListData(myAnimeListId);
-        } else {
-            return null;
-        }
-    })();
-
-    return myAnimeListDataByImdbIdPromise;
+function fetchMyAnimeListDataFromJikan(myAnimeListId) {
+    return new Promise((resolve, reject) => {
+        const url = "https://api.jikan.moe/v4/anime/" + myAnimeListId;
+        GM_xmlhttpRequest({
+            method: "GET",
+            timeout: TIMEOUT_GM_XMLHTTP_REQUEST,
+            url: url,
+            headers: { "User-Agent": USER_AGENT },
+            onload: (response) => {
+                try {
+                    if (response.status !== 200) {
+                        console.error(`MyAnimeList (Jikan): HTTP Error: ${response.status}`);
+                        reject(`HTTP Error ${response.status}`);
+                        return;
+                    }
+                    const result = JSON.parse(response.responseText);
+                    const rating = result.data.score;
+                    if (!isNaN(rating) && rating > 0) {
+                        const malData = {
+                            source: "MyAnimeList",
+                            rating: Number(rating).toLocaleString(undefined, {
+                                minimumFractionDigits: 1,
+                                maximumFractionDigits: 1,
+                            }),
+                            voteCount: result.data.scored_by?.toLocaleString(),
+                            url: result.data.url,
+                        };
+                        console.log("MyAnimeList (Jikan):", malData);
+                        if (VERBOSE_LOGGING) console.log("MyAnimeList (raw):", result.data);
+                        resolve(malData);
+                    } else {
+                        reject("Invalid rating");
+                    }
+                } catch (e) {
+                    console.error("MyAnimeList (Jikan): Parse error.", e);
+                    resolve({
+                        source: "MyAnimeList",
+                        rating: INITIAL_VALUE,
+                        voteCount: INITIAL_VALUE,
+                        url: `https://myanimelist.net/anime/${myAnimeListId}`,
+                        error: "Parse error",
+                    });
+                }
+            },
+            ...gmErrorHandlers(reject, "MyAnimeList (Jikan)"),
+        });
+    });
 }
 
 function normalizeSearchString(string) {
@@ -1045,177 +1055,110 @@ function normalizeSearchString(string) {
         .trim();
 }
 
-// Jikan API enforces a rate limit (429) — retries with delay instead of failing immediately
-async function fetchWithRetry(url, retries = 0) {
-    const maxRetries = 3;
-    const retryDelay = 1000;
-    try {
-        const response = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT) });
-        if (response.status === 429) {
-            if (retries < maxRetries) {
-                console.log(`Rate limited. Retrying in ${retryDelay / 1000} seconds...`);
-                await new Promise((resolve) => setTimeout(resolve, retryDelay));
-                return fetchWithRetry(url, retries + 1);
-            } else {
-                throw new Error("Max retries reached. Please try again later.");
-            }
-        }
-        return response;
-    } catch (error) {
-        console.error("Fetch error:", error);
-        throw error;
-    }
+function searchMyAnimeListItems(searchTitle) {
+    return new Promise((resolve, reject) => {
+        const url = `https://myanimelist.net/search/prefix.json?type=anime&keyword=${encodeURIComponent(searchTitle)}&v=1`;
+        GM_xmlhttpRequest({
+            method: "GET",
+            url,
+            timeout: TIMEOUT_GM_XMLHTTP_REQUEST,
+            headers: { "User-Agent": USER_AGENT },
+            onload: (response) => {
+                try {
+                    if (response.status < 200 || response.status >= 300) {
+                        reject(`HTTP Error ${response.status}`);
+                        return;
+                    }
+                    resolve(JSON.parse(response.responseText).categories?.find((c) => c.type === "anime")?.items ?? []);
+                } catch (e) {
+                    console.error("MyAnimeList search: Parse error.", e);
+                    reject("Parse error");
+                }
+            },
+            ...gmErrorHandlers(reject, `MyAnimeList search (${url})`),
+        });
+    });
 }
 
-let myAnimeListDataByTitlePromise = null;
-async function getMyAnimeListDataByTitle() {
-    // to execute only once
-    if (myAnimeListDataByTitlePromise) return myAnimeListDataByTitlePromise;
-
-    const titleElement = getTitleElement();
-    if (!titleElement) return null;
-
-    // only if genre is anime
-    const genreAnime = document.querySelector(".ipc-chip-list__scroller")?.textContent.includes("Anime");
-    if (!genreAnime) return null;
-
-    const mainTitle = getMainTitle();
-    const originalTitle = getOriginalTitle();
-
-    // get the year of release
-    const metaData = titleElement?.parentElement?.querySelector("ul");
-    const metaItems = metaData?.querySelectorAll("li");
-    // If the text content type is an integer, it is a tv show, otherwise it is a movie.
+function getImdbTypeAndYear() {
+    const metaItems = getTitleElement()?.parentElement?.querySelector("ul")?.querySelectorAll("li");
+    // If the text content type is an integer, it is a movie, otherwise it is a tv show.
     const type = isNaN(metaItems?.[0]?.textContent) ? "tv" : "movie";
-    const yearIndex = type === "tv" ? 1 : 0;
-    const yearText = metaItems?.[yearIndex]?.textContent;
-    const year = parseInt(yearText);
+    const year = parseInt(metaItems?.[type === "tv" ? 1 : 0]?.textContent);
+    return { type, year };
+}
 
-    async function fetchAllPages(searchTitle) {
-        let currentPage = 1;
-        let allResults = [];
+// IMDb and MyAnimeList sometimes disagree on the release year by one (e.g. festival premieres), so a year off by one
+// is accepted if it is the only candidate or its name matches one of the IMDb titles
+function pickMyAnimeListMatch(items, type, year, titles) {
+    const mediaTypes = type === "tv" ? ["TV", "ONA", "OVA"] : ["Movie"];
+    const candidates = items.filter(
+        (item) =>
+            mediaTypes.includes(item.payload?.media_type) && Math.abs((item.payload?.start_year ?? Infinity) - year) <= 1,
+    );
 
-        while (true) {
-            try {
-                const response = await fetchWithRetry(
-                    `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(searchTitle)}&type=${type}&page=${currentPage}`,
-                );
-                const data = await response.json();
-                allResults = allResults.concat(data.data);
-                if (!data.pagination.has_next_page) break;
-                currentPage++;
-            } catch (error) {
-                console.error("Error fetching data:", error);
-                break;
-            }
+    const exactMatch = candidates.find((item) => item.payload.start_year === year);
+    if (exactMatch) return exactMatch;
+    if (candidates.length === 1) return candidates[0];
+
+    const normalizedTitles = titles.map(normalizeSearchString);
+    return (
+        candidates.find((item) => {
+            const name = normalizeSearchString(item.name);
+            return normalizedTitles.some((title) => name.includes(title) || title.includes(name));
+        }) ?? null
+    );
+}
+
+async function findMyAnimeListIdByTitle() {
+    const { type, year } = getImdbTypeAndYear();
+    if (isNaN(year)) return null;
+
+    const titles = [getMainTitle(), getOriginalTitle()].filter(Boolean);
+    for (const title of titles) {
+        const match = pickMyAnimeListMatch(await searchMyAnimeListItems(title), type, year, titles);
+        if (match) {
+            console.log(`MyAnimeList: Search for "${title}" matched "${match.name}" (${match.id})`);
+            return match.id;
         }
-
-        const normalizedSearchTitle = normalizeSearchString(searchTitle);
-        const result = allResults.find((anime, index) => {
-            const normalizedAnimeTitle = normalizeSearchString(anime.title);
-            console.log(`Normalized Search Title: "${normalizedSearchTitle}"`);
-            console.log(`Normalized Anime Title: "${normalizedAnimeTitle}"`);
-
-            const titleMatch = normalizedAnimeTitle.includes(normalizedSearchTitle);
-            const yearMatch = anime.aired?.prop?.from?.year === year;
-            if (titleMatch && yearMatch) {
-                console.log(`✅ Title and year match for "${anime.title}"`);
-                return true;
-            }
-
-            if (!titleMatch && anime.title_english) {
-                const normalizedEnglishTitle = normalizeSearchString(anime.title_english);
-                const englishTitleMatch = normalizedEnglishTitle.includes(normalizedSearchTitle);
-                console.log(`✅ English title match for "${anime.title_english}": ${englishTitleMatch}`);
-
-                if (englishTitleMatch && yearMatch) {
-                    console.log(`🎉 English title and year match for "${anime.title_english}"`);
-                    return true;
-                }
-            }
-
-            if (!titleMatch && anime.title_synonyms && anime.title_synonyms.length > 0) {
-                console.log(`Checking synonyms for anime[${index}] - ${anime.title}, Synonyms: ${anime.title_synonyms}`);
-
-                const synonymMatch = anime.title_synonyms.some((synonym) =>
-                    normalizeSearchString(synonym).includes(normalizedSearchTitle),
-                );
-
-                console.log(`✅ Synonym match for anime[${index}] - ${anime.title}: ${synonymMatch}`);
-
-                if (synonymMatch && yearMatch) {
-                    console.log(`🎉 Synonym and year match for "${anime.title}"`);
-                    return true;
-                }
-            }
-            console.log(`❌ No match found for "${anime.title}"`);
-
-            return false;
-        });
-        return result;
     }
+    return null;
+}
 
-    async function getAnimeData() {
+let myAnimeListDataPromise = null;
+function getMyAnimeListData() {
+    // to execute only once
+    if (myAnimeListDataPromise) return myAnimeListDataPromise;
+
+    myAnimeListDataPromise = (async () => {
+        let myAnimeListId = "";
         try {
-            let result = await fetchAllPages(mainTitle);
-
-            if (!result && originalTitle) {
-                console.log(
-                    `getMyAnimeListDataByTitle: No results found for "${mainTitle}", retrying with originalTitle "${originalTitle}"`,
-                );
-                result = await fetchAllPages(originalTitle);
-            }
-
-            if (result) {
-                console.log("MyAnimeList:", result);
-                return result;
-            } else {
-                console.log("No results found for either title.");
-                return null;
-            }
-        } catch (error) {
-            console.error("Error retrieving data:", error);
-            return null;
+            ({ myAnimeListId } = await getWikidataIds());
+        } catch (e) {
+            console.error("MyAnimeList ID lookup via Wikidata failed, falling back to title search:", e);
         }
-    }
 
-    myAnimeListDataByTitlePromise = (async () => {
-        const anime = await getAnimeData();
-
-        if (anime?.score > 0) {
-            return {
-                source: "MyAnimeList",
-                rating: Number(anime.score).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
-                voteCount: anime.scored_by?.toLocaleString(),
-                url: anime.url,
-            };
-        } else {
+        if (!myAnimeListId) myAnimeListId = await findMyAnimeListIdByTitle();
+        if (!myAnimeListId) {
             console.log("No anime data found.");
-            return {
-                source: "MyAnimeList",
-                rating: INITIAL_VALUE,
-                voteCount: INITIAL_VALUE,
-                url: null,
-            };
+            return { source: "MyAnimeList", rating: INITIAL_VALUE, voteCount: INITIAL_VALUE, url: null };
+        }
+
+        try {
+            return await fetchMyAnimeListPage(myAnimeListId);
+        } catch (e) {
+            console.warn("MyAnimeList: myanimelist.net failed, falling back to Jikan:", e);
+            return fetchMyAnimeListDataFromJikan(myAnimeListId);
         }
     })();
 
-    return myAnimeListDataByTitlePromise;
+    return myAnimeListDataPromise;
 }
 
 async function addMyAnimeListRatingBadge() {
+    // only if genre is anime
     const genreAnime = document.querySelector(".ipc-chip-list__scroller")?.textContent.includes("Anime");
     if (!genreAnime) return;
-
-    async function getMyAnimeListData() {
-        let data = null;
-        try {
-            data = await getMyAnimeListDataByImdbId();
-        } catch (e) {
-            console.error("MyAnimeList ID lookup failed, falling back to title search:", e);
-        }
-        return data ?? (await getMyAnimeListDataByTitle());
-    }
 
     return addRatingBadge("MyAnimeList", getMyAnimeListData, (t) => `https://myanimelist.net/anime.php?q=${t}`);
 }
