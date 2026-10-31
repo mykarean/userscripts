@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name            Magnet Links & Torrent Search Filter
-// @description     Adds magnet links to BT4G, Limetorrents, BT1207, filtering of search results by minimum and maximum size (BT4G only), grouping and one-click opening of similarly-sized items when sorted by size (BT4G only), Cloudflare block detection, automatic reload in case of server errors every 5 minutes
-// @version         20261011
+// @description     Adds magnet links to BT4G, Limetorrents, KickassTorrents (katcr.to), BT1207, filtering of search results by minimum and maximum size (BT4G only), grouping and one-click opening of similarly-sized items when sorted by size (BT4G only), Cloudflare block detection, automatic reload in case of server errors every 5 minutes
+// @version         20261031
 // @author          mykarean
 // @match           *://bt4gprx.com/*
-// @match           *://*.limetorrents.fun/search/all/*
+// @include         /^https?:\/\/limetorrents?\.[a-z]+\/(search|get-posts\/)/
+// @match           *://katcr.to/usearch/*
 // @match           *://bt1207so.top/search*
 // @match           *://bt1207un.top/search*
 // @run-at          document-idle
@@ -25,18 +26,28 @@
 // Config/Requirements
 // ---------------------------------------------------------
 
-const limetorrentsURL = "www.limetorrents.fun";
 const bt4gURL = "bt4gprx.com";
 
 const currentPath = window.location.href;
 const hostname = location.hostname;
+// All Lime mirrors (limetorrent.* / limetorrents.*) come in one of two layouts, told apart by path:
+// "/search..." (limetorrents.org style) and "/get-posts/..." (limetorrent.one style).
+// Neither lists the hash in the results, it is only on the detail page.
+const isLime = /^limetorrents?\./.test(hostname);
+const isLimeOne = isLime && location.pathname.startsWith("/get-posts/");
+const isLimetorrents = isLime && !isLimeOne;
+const isKat = hostname === "katcr.to";
+// Sites whose result list has no magnet: it is fetched from each detail page
+const usesDetailPages = isLime || isKat;
 const magnetImage = GM_info.script.icon;
 
 let itemsFoundElement;
 if (hostname === bt4gURL) {
     itemsFoundElement = document.querySelector("p.notion-result-info");
-} else if (hostname === limetorrentsURL) {
+} else if (isLime) {
     itemsFoundElement = document.querySelector("#content > h2");
+} else if (isKat) {
+    itemsFoundElement = document.querySelector("h2:has(> a.plain)");
 }
 
 // ---------------------------------------------------------
@@ -126,6 +137,99 @@ function setStylesAndFavicon() {
         linkFavicon.type = "image/png";
         linkFavicon.href = "/static/favicon.ico";
         document.head.appendChild(linkFavicon);
+    }
+
+    // Specific modifications for Limetorrents: same look as the site's own sort/filter buttons
+    // (dark green, light-green outline, Verdana)
+    if (isLime) {
+        GM_addStyle(`
+            a.magnet-link,
+            a.magnet-link-pending {
+                margin-right: 8px;
+                border-radius: 2px;
+                border: 0.8px solid #3a5000;
+                padding: 0 8px 0 0;
+                background: #3a5000;
+                outline: none;
+                font-family: Verdana, Geneva, sans-serif;
+                font-size: 12px;
+                font-weight: 400;
+                color: #e3f1be;
+                vertical-align: middle;
+            }
+            a.magnet-link:hover {
+                border-color: #90c600;
+                background: #4a6800;
+                outline: none;
+            }
+            a.magnet-link-pending {
+                border-color: #90c600;
+                background: #fff;
+                color: #3a5000;
+            }
+            a.magnet-link img.magnet-link-img,
+            a.magnet-link-pending img.magnet-link-img {
+                height: 16px;
+                margin: 0 4px 0 6px;
+            }
+        `);
+    }
+
+    // Specific modifications for KickassTorrents: its stylesheet resets image height inside table.data
+    // (".data img") and turns every .badge into a large floating box
+    if (isKat) {
+        GM_addStyle(`
+            img.magnet-link-img {
+                height: 20px !important;
+                width: auto !important;
+                max-width: none !important;
+            }
+            .magnet-link-all-span .badge {
+                display: inline-block;
+                float: none;
+                width: auto;
+                height: auto;
+                min-height: 0;
+                margin: 0 2px;
+                padding: 1px 8px;
+                overflow: visible;
+                border-radius: 10px;
+                background: #99742e;
+                color: #fff;
+                font-size: 16px;
+                vertical-align: middle;
+            }
+            /* Same look as the site's own download button (gold gradient, white, Verdana) */
+            a.magnet-link,
+            a.magnet-link-pending {
+                margin-right: 8px;
+                border-radius: 2px;
+                padding: 2px 8px 2px 0;
+                background: linear-gradient(#c1ad6a, #a28e4b);
+                outline: none;
+                font-family: Verdana, Arial, Helvetica, sans-serif;
+                font-size: 11px;
+                font-weight: 400;
+                vertical-align: middle;
+            }
+            a.magnet-link:hover {
+                background: linear-gradient(#a28e4b, #8a7740);
+                outline: none;
+            }
+            a.magnet-link-pending {
+                background: linear-gradient(#d9cfa6, #c8bd94);
+                color: #fff;
+            }
+            a.magnet-link img.magnet-link-img,
+            a.magnet-link-pending img.magnet-link-img {
+                height: 14px !important;
+                margin: 0 4px 0 6px;
+                filter: none;
+            }
+            a.magnet-link-pending img.magnet-link-img {
+                filter: grayscale(100%) opacity(0.6);
+            }
+        `);
     }
 }
 
@@ -367,22 +471,11 @@ async function processLinksInSearchResults() {
     const hoverFetch = GM_getValue("hoverFetch", false);
 
     // Show an inactive button right away so the layout doesn't shift when the data arrives
-    if (hostname !== limetorrentsURL) {
-        links.forEach(insertMagnetPlaceholder);
-    }
+    links.forEach(insertMagnetPlaceholder);
 
     if (hoverFetch) {
         // Add hover event listeners to fetch on hover
         links.forEach((link) => {
-            // If this is LimeTorrents, process immediately (no fetch used there)
-            if (hostname === limetorrentsURL) {
-                // Ensure we don't re-process
-                if (link.getAttribute("data-magnet-added") !== "true") {
-                    processLinksInSearchResultsLimeTorrents(link);
-                }
-                return;
-            }
-
             // Skip if listener already added
             if (link.getAttribute("data-hover-listener") === "true") {
                 return;
@@ -399,6 +492,8 @@ async function processLinksInSearchResults() {
                         await processLinksInSearchResultsBt4g(link);
                     } else if (hostname.includes("bt1207")) {
                         await processLinksInSearchResultsBt1207(link);
+                    } else if (usesDetailPages) {
+                        await processLinksInSearchResultsDetail(link);
                     }
                 } finally {
                     link.removeAttribute("data-magnet-loading");
@@ -412,12 +507,21 @@ async function processLinksInSearchResults() {
         const promises = links.map(async (link) => {
             if (hostname === bt4gURL) {
                 await processLinksInSearchResultsBt4g(link);
-            } else if (hostname === limetorrentsURL) {
-                processLinksInSearchResultsLimeTorrents(link);
             }
         });
 
         await Promise.all(promises);
+
+        // These sites rate-limit (e.g. HTTP 429): fetch one by one with a pause
+        if (usesDetailPages) {
+            for (const link of links) {
+                if (link.getAttribute("data-magnet-added") === "true") continue;
+                // Keep failed items as they are (click to retry) instead of re-fetching on every re-scan
+                if (link.previousElementSibling?.classList.contains("magnet-link-error")) continue;
+                await processLinksInSearchResultsDetail(link);
+                await new Promise((resolve) => setTimeout(resolve, 600));
+            }
+        }
 
         if (hostname.includes("bt1207")) {
             for (let link of links) {
@@ -492,8 +596,13 @@ function getSearchResultLinks() {
             }
             return true;
         });
-    } else if (hostname === limetorrentsURL) {
-        return document.querySelectorAll('a[href*="//itorrents.net/torrent/"]');
+    } else if (isLimeOne) {
+        return document.querySelectorAll('.tt-name a[href^="/post-detail/"]');
+    } else if (isLimetorrents) {
+        // Skips the sponsored table and the empty icon anchor in front of each title
+        return document.querySelectorAll("table.table2 .tt-name a.openPopup:not(.csprite_dl14)");
+    } else if (isKat) {
+        return document.querySelectorAll("table.data a.cellMainLink");
     } else if (hostname.includes("bt1207")) {
         return document.querySelectorAll("body > div.container-fluid > div:nth-child(6) > div.col-md-6 > ul > li:nth-child(1) > a");
     }
@@ -519,6 +628,38 @@ function processLinksInSearchResultsBt4g(link) {
 
 function processLinksInSearchResultsBt1207(link) {
     return withInflight(link, () => fetchMagnetBt1207(link));
+}
+
+function processLinksInSearchResultsDetail(link) {
+    return withInflight(link, () => fetchMagnetFromDetailPage(link));
+}
+
+async function fetchMagnetFromDetailPage(link) {
+    try {
+        if (link.getAttribute("data-magnet-added") === "true") return;
+
+        const html = await fetchWithRetry(link.href, 3, 2000);
+
+        const doc = new DOMParser().parseFromString(html, "text/html");
+        // limetorrent.one: magnet/.torrent anchors; limetorrents.org: hash only as text in a table cell
+        const magnetAnchor = doc.querySelector('a[href^="magnet:"]');
+        const torrentAnchor = doc.querySelector('a[href*="/torrent/"][href*=".torrent"]');
+        const hashCell = Array.from(doc.querySelectorAll("td")).find((td) => /^[a-f0-9]{40}$/i.test(td.textContent.trim()));
+        const hash = extractHashFromUrl(magnetAnchor?.getAttribute("href") || torrentAnchor?.getAttribute("href") || hashCell?.textContent.trim() || "");
+        if (hash) {
+            insertMagnetLink(link, hash, link.textContent);
+            link.setAttribute("data-magnet-added", "true");
+        } else {
+            insertMagnetError(link, "No magnet found", true);
+        }
+    } catch (error) {
+        console.error("Error getting magnet link:", error);
+        if (error instanceof CloudflareBlockedError) {
+            insertMagnetError(link, "Blocked by Cloudflare", false, "Reload the page to pass the Cloudflare check");
+        } else {
+            insertMagnetError(link, "Failed to load magnet", true);
+        }
+    }
 }
 
 async function fetchMagnetBt4g(link) {
@@ -601,21 +742,6 @@ async function fetchMagnetBt1207(link) {
     }
 }
 
-function processLinksInSearchResultsLimeTorrents(link) {
-    // Skip if magnet link exists
-    const magnetLink = link.getAttribute("data-magnet-added");
-    if (magnetLink === "true") return;
-
-    const hash = extractHashFromUrl(link.href.split("/").pop().split("?")[0]);
-    const torrentName = link?.nextElementSibling?.textContent;
-    if (hash) {
-        insertMagnetLink(link, hash, torrentName);
-        link.setAttribute("data-magnet-added", "true");
-        // Hide unnecessary element
-        link.style.display = "none";
-    }
-}
-
 // Placeholder anchor per result link (BT4G/BT1207: magnet needs a fetch first)
 const magnetPlaceholders = new WeakMap();
 // Running fetch per result link, so hover, click and group-open share one request
@@ -654,6 +780,7 @@ function withInflight(link, fn) {
 function loadMagnet(link) {
     if (hostname === bt4gURL) return processLinksInSearchResultsBt4g(link);
     if (hostname.includes("bt1207")) return processLinksInSearchResultsBt1207(link);
+    if (usesDetailPages) return processLinksInSearchResultsDetail(link);
 }
 
 function createMagnetAnchor(pending, link) {
@@ -922,7 +1049,7 @@ function addClickAllMagnetLinks() {
                     }
                 }
             }
-        } else if (hostname === limetorrentsURL) {
+        } else if (isLime) {
             itemsFoundElement.textContent = "";
         }
 
@@ -1148,7 +1275,7 @@ async function main() {
     addMenuCommand();
 
     // handle search results
-    if (/\/search/.test(currentPath)) {
+    if (/\/(u?search|get-posts)/.test(currentPath)) {
         itemFilterBySize();
         markSimilarSizedItems();
         addClickAllMagnetLinks();
