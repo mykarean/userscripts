@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cheapest Round-Trip Dates Finder
 // @description  Automatically scans months of date combinations for the cheapest round trip and verifies real prices/layovers - automation Skyscanner's own flexible-date search doesn't offer. Just open a route (origin + destination) - no dates needed.
-// @version      20260920.2
+// @version      20261117
 // @author       mykarean
 // @icon         https://www.skyscanner.com/images/opengraph_v1.png
 // @include      /^https:\/\/www\.skyscanner\.[a-z.]+\/transport\/(flights|fluge|vols|vuelos)\/.+/
@@ -141,6 +141,7 @@
             gridFailures: (failed, total, list) => `${failed} von ${total} Kalender-Anfragen fehlgeschlagen: ${list}`,
             checkingPrices: (done, total) => `Prüfe Preiszugehörigkeit & Zwischenstopp-Details: ${done}/${total}`,
             realPriceFailures: (failed, total) => `${failed} von ${total} echten Preisen konnten nicht geladen werden`,
+            retryFailed: "Fehlgeschlagene erneut laden",
             from: "Hin- und Rückflug ab",
             direct: "Direkt ab",
             oneStop: "1 Stopp ab",
@@ -172,6 +173,7 @@
             gridFailures: (failed, total, list) => `${failed} of ${total} calendar requests failed: ${list}`,
             checkingPrices: (done, total) => `Checking price category & layover details: ${done}/${total}`,
             realPriceFailures: (failed, total) => `${failed} of ${total} real prices could not be loaded`,
+            retryFailed: "Retry failed",
             from: "Round trip from",
             direct: "Direct from",
             oneStop: "1 stop from",
@@ -203,6 +205,7 @@
             gridFailures: (failed, total, list) => `${failed} de ${total} solicitudes de calendario fallaron: ${list}`,
             checkingPrices: (done, total) => `Comprobando categoría de precio y detalles de escalas: ${done}/${total}`,
             realPriceFailures: (failed, total) => `${failed} de ${total} precios reales no se pudieron cargar`,
+            retryFailed: "Reintentar los fallidos",
             from: "Ida y vuelta desde",
             direct: "Directo desde",
             oneStop: "1 escala desde",
@@ -234,6 +237,7 @@
             gridFailures: (failed, total, list) => `${failed} requêtes de calendrier sur ${total} ont échoué : ${list}`,
             checkingPrices: (done, total) => `Vérification de la catégorie de prix et des escales : ${done}/${total}`,
             realPriceFailures: (failed, total) => `${failed} prix réels sur ${total} n'ont pas pu être chargés`,
+            retryFailed: "Réessayer les échecs",
             from: "Aller-retour à partir de",
             direct: "Direct à partir de",
             oneStop: "1 escale à partir de",
@@ -265,6 +269,7 @@
             gridFailures: (failed, total, list) => `${total}件中${failed}件のカレンダーリクエストが失敗しました：${list}`,
             checkingPrices: (done, total) => `料金カテゴリと乗り継ぎ詳細を確認中：${done}/${total}`,
             realPriceFailures: (failed, total) => `${total}件中${failed}件の実際の料金を読み込めませんでした`,
+            retryFailed: "失敗分を再試行",
             from: "往復",
             direct: "直行",
             oneStop: "経由1回",
@@ -717,6 +722,10 @@
     #sky-status { margin-top:10px; color:#5b6472; font-size:12px; min-height:16px; white-space:nowrap;
       overflow:hidden; text-overflow:ellipsis; }
     #sky-status.sky-status-error { color:#c0392b; }
+    #sky-retry { margin-top:6px; padding:5px 10px; border:1px solid #0062e3; border-radius:6px;
+      background:#fff; color:#0062e3; font:inherit; font-size:12px; font-weight:600; cursor:pointer; }
+    #sky-retry:hover { background:#eef5fd; }
+    #sky-retry[hidden] { display:none; }
     #sky-progress-track { margin-top:6px; height:4px; border-radius:2px; background:#eef0f3; overflow:hidden; display:none; }
     #sky-progress-bar { height:100%; width:0%; background:#0062e3; transition:width .2s ease; }
     #sky-results { margin-top:6px; }
@@ -822,6 +831,7 @@
           <button id="sky-start">${s.startSearch}</button>
         </details>
         <div id="sky-status" role="status" aria-live="polite"></div>
+        <button id="sky-retry" hidden>${s.retryFailed}</button>
         <div id="sky-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="sky-progress-bar"></div></div>
         <div id="sky-results"></div>
       </div>
@@ -833,6 +843,7 @@
         progressTrack = panel.querySelector("#sky-progress-track");
         progressBar = panel.querySelector("#sky-progress-bar");
         panel.querySelector("#sky-start").onclick = runSearch;
+        panel.querySelector("#sky-retry").onclick = retryFailedPrices;
         panel.querySelectorAll("input").forEach((input) => {
             input.addEventListener("keydown", (e) => {
                 if (e.key === "Enter") runSearch();
@@ -1017,8 +1028,10 @@
     // beats direct-flight price, because trip length is an explicit user setting while the
     // direct-flight price is just a side aspect.
     function compareCandidates(a, b, targetNights) {
-        const priceDiff = acceptablePrice(a.realStopPrices) - acceptablePrice(b.realStopPrices);
-        if (priceDiff !== 0) return priceDiff;
+        const priceA = acceptablePrice(a.realStopPrices);
+        const priceB = acceptablePrice(b.realStopPrices);
+        // Infinity - Infinity is NaN, which would skip the tiebreakers below; unloaded cards stay at the end
+        if (priceA !== priceB) return priceA < priceB ? -1 : 1;
 
         if (Number.isFinite(targetNights)) {
             const durationDiff = Math.abs(a.nights - targetNights) - Math.abs(b.nights - targetNights);
@@ -1060,22 +1073,30 @@
         return parts.join("");
     }
 
-    async function fetchRealPrices(priorNote, targetNights) {
+    let lastPriorNote = "";
+    let lastTargetNights = NaN;
+
+    const hasRealPrices = (c) => Boolean(c.realStopPrices?.stopPrices);
+
+    async function fetchRealPrices(priorNote, targetNights, indices = lastTop.map((_, i) => i)) {
         const s = t();
         let done = 0;
-        let failed = 0;
-        const total = lastTop.length;
+        const total = indices.length;
+        lastPriorNote = priorNote;
+        lastTargetNights = targetNights;
+        const retryEl = panel.querySelector("#sky-retry");
+        retryEl.hidden = true;
         setProgress(0);
         setStatus(s.checkingPrices(0, total));
 
-        const jobs = lastTop.map(async (c, i) => {
+        const jobs = indices.map(async (i) => {
+            const c = lastTop[i];
             const cardEl = resultsEl.querySelector(`.sky-card[data-idx="${i}"]`);
             const pricesEl = cardEl?.querySelector("[data-real-prices]");
             if (pricesEl) pricesEl.innerHTML = '<span class="sky-loading"><span class="sky-spinner"></span></span>';
             const url = skyscannerLink(lastOrigin, lastDestination, c.outDate, c.inDate);
             const payload = await scrapeInTab(url);
             c.realStopPrices = payload;
-            if (!payload) failed++;
             if (pricesEl) pricesEl.innerHTML = stopPricesLabel(payload);
             const priceEl = cardEl?.querySelector(".sky-price");
             const realPrice = acceptablePrice(payload);
@@ -1088,10 +1109,17 @@
         await Promise.all(jobs);
         lastTop.sort((a, b) => compareCandidates(a, b, targetNights));
         renderCards();
-        const realPriceNote = failed ? s.realPriceFailures(failed, total) : "";
+        const failed = lastTop.filter((c) => !hasRealPrices(c)).length;
+        const realPriceNote = failed ? s.realPriceFailures(failed, lastTop.length) : "";
         const combinedNote = [priorNote, realPriceNote].filter(Boolean).join(" · ");
         setStatus(combinedNote, Boolean(priorNote || realPriceNote));
+        retryEl.hidden = !failed;
         hideProgress(400);
+    }
+
+    function retryFailedPrices() {
+        const indices = lastTop.flatMap((c, i) => (hasRealPrices(c) ? [] : [i]));
+        if (indices.length) fetchRealPrices(lastPriorNote, lastTargetNights, indices);
     }
 
     // ============================================================
