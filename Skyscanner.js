@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cheapest Round-Trip Dates Finder
 // @description  Automatically scans months of date combinations for the cheapest round trip and verifies real prices/layovers - automation Skyscanner's own flexible-date search doesn't offer. Just open a route (origin + destination) - no dates needed.
-// @version      20261117
+// @version      20261126
 // @author       mykarean
 // @icon         https://www.skyscanner.com/images/opengraph_v1.png
 // @include      /^https:\/\/www\.skyscanner\.[a-z.]+\/transport\/(flights|fluge|vols|vuelos)\/.+/
@@ -30,7 +30,9 @@
     // The outer timeout (see scrapeInTab) starts the instant the iframe is created, while the
     // inner one (see runScrapeMode) only starts once the iframe has loaded and its script is
     // running - this buffer accounts for that startup lag so the outer timeout can't fire first.
-    const IFRAME_STARTUP_BUFFER_MS = 2000;
+    // 2s was too tight with five iframes loading in parallel: the outer timeout won every time
+    // and the inner timeout's diagnostics were thrown away.
+    const IFRAME_STARTUP_BUFFER_MS = 15000;
 
     // ============================================================
     // LOCALE, MARKET & CURRENCY DETECTION
@@ -138,9 +140,10 @@
             routeError: "Route konnte nicht aus der URL gelesen werden.",
             loading: (i, total, min, max) => `Lade ${i}/${total} (${min}-${max} Nächte)`,
             doneNoResults: (total) => `Fertig: 0 Treffer (${total} Anfragen)`,
-            gridFailures: (failed, total, list) => `${failed} von ${total} Kalender-Anfragen fehlgeschlagen: ${list}`,
+            gridFailures: "Einige Kalender-Anfragen sind fehlgeschlagen",
             checkingPrices: (done, total) => `Prüfe Preiszugehörigkeit & Zwischenstopp-Details: ${done}/${total}`,
-            realPriceFailures: (failed, total) => `${failed} von ${total} echten Preisen konnten nicht geladen werden`,
+            realPriceFailures: "Einige echte Preise konnten nicht geladen werden",
+            reloadHint: "Skyscanner blockiert evtl. Anfragen – hilft ein erneuter Versuch nicht, Seite neu laden.",
             retryFailed: "Fehlgeschlagene erneut laden",
             from: "Hin- und Rückflug ab",
             direct: "Direkt ab",
@@ -170,9 +173,10 @@
             routeError: "Could not read the route from the URL.",
             loading: (i, total, min, max) => `Loading ${i}/${total} (${min}-${max} nights)`,
             doneNoResults: (total) => `Done: 0 matches (${total} requests)`,
-            gridFailures: (failed, total, list) => `${failed} of ${total} calendar requests failed: ${list}`,
+            gridFailures: "Some calendar requests failed",
             checkingPrices: (done, total) => `Checking price category & layover details: ${done}/${total}`,
-            realPriceFailures: (failed, total) => `${failed} of ${total} real prices could not be loaded`,
+            realPriceFailures: "Some real prices could not be loaded",
+            reloadHint: "Skyscanner may be blocking requests – if retrying doesn't help, reload the page.",
             retryFailed: "Retry failed",
             from: "Round trip from",
             direct: "Direct from",
@@ -202,9 +206,10 @@
             routeError: "No se pudo leer la ruta desde la URL.",
             loading: (i, total, min, max) => `Cargando ${i}/${total} (${min}-${max} noches)`,
             doneNoResults: (total) => `Listo: 0 resultados (${total} solicitudes)`,
-            gridFailures: (failed, total, list) => `${failed} de ${total} solicitudes de calendario fallaron: ${list}`,
+            gridFailures: "Algunas solicitudes de calendario fallaron",
             checkingPrices: (done, total) => `Comprobando categoría de precio y detalles de escalas: ${done}/${total}`,
-            realPriceFailures: (failed, total) => `${failed} de ${total} precios reales no se pudieron cargar`,
+            realPriceFailures: "Algunos precios reales no se pudieron cargar",
+            reloadHint: "Skyscanner podría estar bloqueando las solicitudes: si reintentar no ayuda, recarga la página.",
             retryFailed: "Reintentar los fallidos",
             from: "Ida y vuelta desde",
             direct: "Directo desde",
@@ -234,9 +239,10 @@
             routeError: "Impossible de lire l'itinéraire depuis l'URL.",
             loading: (i, total, min, max) => `Chargement ${i}/${total} (${min}-${max} nuits)`,
             doneNoResults: (total) => `Terminé : 0 résultat (${total} requêtes)`,
-            gridFailures: (failed, total, list) => `${failed} requêtes de calendrier sur ${total} ont échoué : ${list}`,
+            gridFailures: "Certaines requêtes de calendrier ont échoué",
             checkingPrices: (done, total) => `Vérification de la catégorie de prix et des escales : ${done}/${total}`,
-            realPriceFailures: (failed, total) => `${failed} prix réels sur ${total} n'ont pas pu être chargés`,
+            realPriceFailures: "Certains prix réels n'ont pas pu être chargés",
+            reloadHint: "Skyscanner bloque peut-être les requêtes : si réessayer ne suffit pas, rechargez la page.",
             retryFailed: "Réessayer les échecs",
             from: "Aller-retour à partir de",
             direct: "Direct à partir de",
@@ -266,9 +272,10 @@
             routeError: "URLから区間を読み取れませんでした。",
             loading: (i, total, min, max) => `読み込み中 ${i}/${total} (${min}〜${max}泊)`,
             doneNoResults: (total) => `完了：0件一致（${total}件のリクエスト）`,
-            gridFailures: (failed, total, list) => `${total}件中${failed}件のカレンダーリクエストが失敗しました：${list}`,
+            gridFailures: "一部のカレンダーリクエストが失敗しました",
             checkingPrices: (done, total) => `料金カテゴリと乗り継ぎ詳細を確認中：${done}/${total}`,
-            realPriceFailures: (failed, total) => `${total}件中${failed}件の実際の料金を読み込めませんでした`,
+            realPriceFailures: "一部の実際の料金を読み込めませんでした",
+            reloadHint: "Skyscannerがリクエストをブロックしている可能性があります。再試行で改善しない場合は、ページを再読み込みしてください。",
             retryFailed: "失敗分を再試行",
             from: "往復",
             direct: "直行",
@@ -590,37 +597,52 @@
         const targetWindow = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
         const origFetch = targetWindow.fetch;
         let done = false;
+        // Collected so a failed scrape can say why (blocked, slow, empty answer) instead of just null
+        const diag = { searchRequests: 0, httpStatus: null, searchStatus: null, hadStopPrices: null, parseError: null, networkError: null };
         const finish = (payload) => {
             if (done) return;
             done = true;
             if (key) GM_setValue(key, payload);
             logDebug(debug, "[SkyScrape] finish() called with:", payload);
         };
-        const handleBody = (url, text) => {
+        const isSearchUrl = (url) => Boolean(url && url.includes("/radar/api/v2/web-unified-search"));
+        const handleBody = (url, text, httpStatus) => {
             logDebug(debug, "[SkyScrape] Request seen:", url, `(${text?.length ?? 0} chars)`);
-            if (!url || !url.includes("/radar/api/v2/web-unified-search")) return;
+            if (!isSearchUrl(url)) return;
+            diag.searchRequests++;
+            diag.httpStatus = httpStatus ?? null;
             try {
                 const json = JSON.parse(text);
                 const stopPrices = json?.itineraries?.filterStats?.stopPrices;
                 const status = json?.itineraries?.context?.status;
+                diag.searchStatus = status ?? null;
+                diag.hadStopPrices = Boolean(stopPrices);
+                diag.parseError = null;
                 logDebug(debug, "[SkyScrape] web-unified-search response, status =", status, stopPrices);
                 if (stopPrices && status === "complete") {
                     const categories = cheapestPerCategory(json.itineraries.results, debug);
                     finish({ stopPrices, categories });
                 }
             } catch (err) {
+                diag.parseError = `${err?.name}: ${err?.message} (body starts: ${String(text).slice(0, 80)})`;
                 logDebug(debug, "[SkyScrape] Response was not valid JSON:", err);
             }
         };
         targetWindow.fetch = function (...args) {
             const url = typeof args[0] === "string" ? args[0] : args[0]?.url;
-            return origFetch.apply(this, args).then((res) => {
-                res.clone()
-                    .text()
-                    .then((text) => handleBody(url, text))
-                    .catch(() => {});
-                return res;
-            });
+            return origFetch.apply(this, args).then(
+                (res) => {
+                    res.clone()
+                        .text()
+                        .then((text) => handleBody(url, text, res.status))
+                        .catch(() => {});
+                    return res;
+                },
+                (err) => {
+                    if (isSearchUrl(url)) diag.networkError = `${err?.name}: ${err?.message}`;
+                    throw err;
+                },
+            );
         };
         const origOpen = targetWindow.XMLHttpRequest.prototype.open;
         const origSend = targetWindow.XMLHttpRequest.prototype.send;
@@ -629,10 +651,13 @@
             return origOpen.apply(this, arguments);
         };
         targetWindow.XMLHttpRequest.prototype.send = function () {
-            this.addEventListener("loadend", () => handleBody(this.__skyUrl, this.responseText));
+            this.addEventListener("loadend", () => handleBody(this.__skyUrl, this.responseText, this.status));
             return origSend.apply(this, arguments);
         };
-        setTimeout(() => finish(null), SCRAPE_TIMEOUT_MS);
+        setTimeout(
+            () => finish({ failure: { ...diag, pageTitle: document.title, pageUrl: location.href.split("#")[0] } }),
+            SCRAPE_TIMEOUT_MS,
+        );
     }
 
     function scrapeInTab(url) {
@@ -667,14 +692,16 @@
                 settled = true;
                 clearTimeout(timeoutId);
                 cleanup();
-                if (newValue === null) {
-                    // The scrape tab/iframe ran and gave up on its own (its internal timeout
-                    // elapsed without a "complete" search result) - this is a different failure
-                    // mode than our outer timeout above, which only fires if the iframe never
-                    // responded at all.
+                if (newValue?.failure) {
+                    // The iframe ran and gave up on its own (its internal timeout elapsed without a
+                    // "complete" search result) - a different failure mode than our outer timeout
+                    // above, which only fires if the iframe never responded at all.
                     console.warn(
-                        `[Sky] Scrape for ${url} finished without a result (search took longer than ${SCRAPE_TIMEOUT_MS / 1000}s inside the tab).`,
+                        `[Sky] Scrape for ${url} gave up after ${SCRAPE_TIMEOUT_MS / 1000}s inside the tab. Diagnostics:`,
+                        newValue.failure,
                     );
+                    resolve(null);
+                    return;
                 }
                 resolve(newValue);
             });
@@ -719,10 +746,9 @@
     #sky-start { width:100%; margin-top:14px; padding:9px; border:none; border-radius:8px;
       background:#0062e3; color:#fff; font:inherit; font-weight:600; cursor:pointer; }
     #sky-start:hover { background:#1f66c0; }
-    #sky-status { margin-top:10px; color:#5b6472; font-size:12px; min-height:16px; white-space:nowrap;
-      overflow:hidden; text-overflow:ellipsis; }
+    #sky-status { margin-top:10px; color:#5b6472; font-size:12px; min-height:16px; }
     #sky-status.sky-status-error { color:#c0392b; }
-    #sky-retry { margin-top:6px; padding:5px 10px; border:1px solid #0062e3; border-radius:6px;
+    #sky-retry { display:block; width:100%; margin-top:8px; padding:7px 10px; border:1px solid #0062e3; border-radius:6px;
       background:#fff; color:#0062e3; font:inherit; font-size:12px; font-weight:600; cursor:pointer; }
     #sky-retry:hover { background:#eef5fd; }
     #sky-retry[hidden] { display:none; }
@@ -748,7 +774,9 @@
     @keyframes sky-spin { to { transform:rotate(360deg); } }
     @media (prefers-reduced-motion: reduce) { .sky-spinner { animation:none; } }
     .sky-empty { color:#c0392b; margin-top:8px; }
-    .sky-chip-error { color:#c0392b; font-size:11px; }
+    .sky-chip-error { color:#c0392b; font-size:11px; font-weight:600; }
+    .sky-card.sky-card-failed { border-color:#e8b4ae; background:#fdf3f2; }
+    .sky-card.sky-card-failed:hover { border-color:#c0392b; background:#fbeae8; }
   `;
 
     let panel, statusEl, resultsEl, progressTrack, progressBar;
@@ -964,13 +992,13 @@
         const displayPrice = Number.isFinite(realPrice) ? realPrice : c.price;
         const formatHint = currencyFormatFromPayload(c.realStopPrices);
         return `
-          <a class="sky-card" data-idx="${i}" href="${skyscannerLink(origin, destination, c.outDate, c.inDate)}" target="_blank" rel="noopener noreferrer">
+          <a class="sky-card${c.realStopPrices === null ? " sky-card-failed" : ""}" data-idx="${i}" href="${skyscannerLink(origin, destination, c.outDate, c.inDate)}" target="_blank" rel="noopener noreferrer">
             <div class="sky-price-row">
               <span class="sky-rank">${i + 1}</span>
               <span class="sky-price"${c.quotedAt ? ` title="${s.priceSnapshotFrom(fmtDateTime(c.quotedAt))}"` : ""}>${s.from} ${formatPrice(displayPrice, formatHint)}</span>
             </div>
             <div class="sky-dates">${fmtDate(c.outDate)} → ${fmtDate(c.inDate)} (${s.nightsSuffix(c.nights)})</div>
-            <span class="sky-real-prices" data-real-prices>${c.realStopPrices ? stopPricesLabel(c.realStopPrices, isShortestOneLayover) : ""}</span>
+            <span class="sky-real-prices" data-real-prices>${c.realStopPrices !== undefined ? stopPricesLabel(c.realStopPrices, isShortestOneLayover) : ""}</span>
           </a>`;
     }
 
@@ -1050,7 +1078,7 @@
 
     function stopPricesLabel(payload, isShortestOneLayover) {
         const s = t();
-        if (!payload?.stopPrices) return `<span class="sky-chip-error">${s.couldNotLoad}</span>`;
+        if (!payload?.stopPrices) return `<span class="sky-chip-error">⚠ ${s.couldNotLoad}</span>`;
         const { stopPrices, categories } = payload;
         const bestCat = bestPriceCategory(payload);
         const chip = (cat, prefix, formattedPrice, suffix, muted) => {
@@ -1078,7 +1106,7 @@
 
     const hasRealPrices = (c) => Boolean(c.realStopPrices?.stopPrices);
 
-    async function fetchRealPrices(priorNote, targetNights, indices = lastTop.map((_, i) => i)) {
+    async function fetchRealPrices(priorNote, targetNights, indices = lastTop.map((_, i) => i), isRetry = false) {
         const s = t();
         let done = 0;
         const total = indices.length;
@@ -1093,10 +1121,13 @@
             const c = lastTop[i];
             const cardEl = resultsEl.querySelector(`.sky-card[data-idx="${i}"]`);
             const pricesEl = cardEl?.querySelector("[data-real-prices]");
+            cardEl?.classList.remove("sky-card-failed");
             if (pricesEl) pricesEl.innerHTML = '<span class="sky-loading"><span class="sky-spinner"></span></span>';
             const url = skyscannerLink(lastOrigin, lastDestination, c.outDate, c.inDate);
             const payload = await scrapeInTab(url);
+            if (isRetry) console.info(`[Sky] Retry for ${fmtDate(c.outDate)}→${fmtDate(c.inDate)}: ${payload ? "succeeded" : "failed again"}`);
             c.realStopPrices = payload;
+            cardEl?.classList.toggle("sky-card-failed", !payload);
             if (pricesEl) pricesEl.innerHTML = stopPricesLabel(payload);
             const priceEl = cardEl?.querySelector(".sky-price");
             const realPrice = acceptablePrice(payload);
@@ -1110,8 +1141,9 @@
         lastTop.sort((a, b) => compareCandidates(a, b, targetNights));
         renderCards();
         const failed = lastTop.filter((c) => !hasRealPrices(c)).length;
-        const realPriceNote = failed ? s.realPriceFailures(failed, lastTop.length) : "";
-        const combinedNote = [priorNote, realPriceNote].filter(Boolean).join(" · ");
+        const realPriceNote = failed ? s.realPriceFailures : "";
+        const hint = priorNote || realPriceNote ? s.reloadHint : "";
+        const combinedNote = [priorNote, realPriceNote, hint].filter(Boolean).join(" · ");
         setStatus(combinedNote, Boolean(priorNote || realPriceNote));
         retryEl.hidden = !failed;
         hideProgress(400);
@@ -1119,7 +1151,7 @@
 
     function retryFailedPrices() {
         const indices = lastTop.flatMap((c, i) => (hasRealPrices(c) ? [] : [i]));
-        if (indices.length) fetchRealPrices(lastPriorNote, lastTargetNights, indices);
+        if (indices.length) fetchRealPrices(lastPriorNote, lastTargetNights, indices, true);
     }
 
     // ============================================================
@@ -1180,11 +1212,14 @@
                 .join(" | ");
             logDebug(DEBUG, `[Sky] Search done: ${candidates.length} candidates total, top10: ${top10Str}`);
         }
-        const gridFailureNote = failedPairs.length ? s.gridFailures(failedPairs.length, pairs.length, failedPairs.join(", ")) : "";
+        const gridFailureNote = failedPairs.length ? s.gridFailures : "";
         renderResults(candidates, origin, destination);
         panel.querySelector("#sky-start").textContent = s.searchAgain;
         if (!candidates.length) {
-            setStatus(gridFailureNote || s.doneNoResults(pairs.length), Boolean(gridFailureNote));
+            setStatus(
+                gridFailureNote ? `${gridFailureNote} · ${s.reloadHint}` : s.doneNoResults(pairs.length),
+                Boolean(gridFailureNote),
+            );
             hideProgress(400);
         } else {
             fetchRealPrices(gridFailureNote, targetNights);
