@@ -716,12 +716,13 @@
 
     const STYLE = `
     #sky-panel, #sky-panel * { box-sizing:border-box; }
-    #sky-panel { position:fixed; bottom:16px; right:16px; width:330px; max-height:98vh;
+    #sky-panel { position:fixed; bottom:16px; right:16px; width:330px; max-width:calc(100vw - 32px);
+      max-height:calc(100vh - 32px); max-height:calc(100dvh - 32px);
       overflow:hidden;
       background:#ffffff; color:#1f2430; font:13px/1.45 -apple-system,Segoe UI,Roboto,sans-serif;
       z-index:999999; border:1px solid #e2e5ea; border-radius:12px;
       box-shadow:0 8px 24px rgba(20,30,50,0.12); }
-    #sky-panel-scroll { max-height:98vh; overflow-y:scroll; overflow-x:hidden; padding:16px;
+    #sky-panel-scroll { max-height:calc(100vh - 34px); max-height:calc(100dvh - 34px); overflow-y:scroll; overflow-x:hidden; padding:16px;
       scrollbar-width:none; }
     #sky-panel-scroll::-webkit-scrollbar { display:none; }
     #sky-scroll-thumb { position:absolute; top:0; right:3px; width:6px; border-radius:3px;
