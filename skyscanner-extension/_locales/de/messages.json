@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "Günstigste Hin- und Rückflug-Daten finden",
+    "description": "Extension name"
+  },
+  "extDescription": {
+    "message": "Durchsucht auf Skyscanner Datumskombinationen nach dem günstigsten Hin- und Rückflug und prüft echte Preise und Umstiege.",
+    "description": "Extension description (max. 132 characters)"
+  }
+}

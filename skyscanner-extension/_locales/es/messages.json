@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "Buscador de las fechas de ida y vuelta más baratas",
+    "description": "Extension name"
+  },
+  "extDescription": {
+    "message": "Analiza combinaciones de fechas en Skyscanner para hallar el viaje de ida y vuelta más barato y verifica precios y escalas reales.",
+    "description": "Extension description (max. 132 characters)"
+  }
+}

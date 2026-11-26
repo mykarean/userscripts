@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "Recherche des dates aller-retour les moins chères",
+    "description": "Extension name"
+  },
+  "extDescription": {
+    "message": "Analyse des combinaisons de dates sur Skyscanner pour trouver l'aller-retour le moins cher et vérifie les prix et escales réels.",
+    "description": "Extension description (max. 132 characters)"
+  }
+}

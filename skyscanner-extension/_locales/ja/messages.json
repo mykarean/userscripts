@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "最安の往復日程ファインダー",
+    "description": "Extension name"
+  },
+  "extDescription": {
+    "message": "Skyscannerで数か月分の日付の組み合わせを調べて最安の往復を見つけ、実際の料金と乗り継ぎを確認します。",
+    "description": "Extension description (max. 132 characters)"
+  }
+}

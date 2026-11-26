@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "Cheapest Round-Trip Dates Finder",
+    "description": "Extension name"
+  },
+  "extDescription": {
+    "message": "Scans months of date combinations on Skyscanner for the cheapest round trip and verifies real prices and layovers.",
+    "description": "Extension description (max. 132 characters)"
+  }
+}

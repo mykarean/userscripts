@@ -1,0 +1,162 @@
+name: skyscanner-extension
+
+# Builds a Chrome/Edge extension (Manifest V3) from Skyscanner.js (the same file as on Greasy
+# Fork), stores it as an artifact and uploads it to the Chrome Web Store on a new @version
+# (once the secrets CWS_CLIENT_ID, CWS_CLIENT_SECRET and CWS_REFRESH_TOKEN as well as the
+# repository variable CWS_PUBLISHER_ID - dashboard: Publisher > Settings - are set).
+# Only runs when Skyscanner.js or the extension files change.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "Skyscanner.js"
+      - "skyscanner-extension/**"
+      - ".github/workflows/skyscanner-extension.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # for the cws-v<version> tag
+    env:
+      CWS_EXTENSION_ID: kbnmcobmhanehgpkooefcfinajdlhgef # public, not a secret
+      HAS_CWS: ${{ secrets.CWS_REFRESH_TOKEN != '' && vars.CWS_PUBLISHER_ID != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Taken straight from the checkout instead of curl from raw.githubusercontent.com (which
+      # can still serve the old, cached version right after a push).
+      - name: Use the userscript
+        run: cp Skyscanner.js script.user.js
+
+      - name: Build extension
+        shell: node {0}
+        run: |
+          const fs = require("fs");
+          const src = fs.readFileSync("script.user.js", "utf8");
+
+          // --- Read the metadata header ---
+          const header = src.match(/==UserScript==([\s\S]*?)==\/UserScript==/)[1];
+          const meta = (key) => (header.match(new RegExp("@" + key + "\\s+(.+)")) || [])[1]?.trim();
+          const include = meta("include"); // /regex/ -> checked in the wrapper
+          const regexSource = include.replace(/^\/|\/$/g, "");
+
+          // @version is YYYYMMDD (e.g. 20261117) -> the manifest allows at most 65535 per part
+          const v = meta("version");
+          const version = `${v.slice(0, 4)}.${+v.slice(4, 6)}.${+v.slice(6, 8)}`;
+
+          // --- GM_* shim: localStorage + storage event (also fires between iframes/tabs) ---
+          const shim = `
+          (function () {
+            const P = "gm_";
+            const listeners = new Map();
+            let nextId = 1;
+            window.GM_getValue = (k, d) => {
+              const raw = localStorage.getItem(P + k);
+              return raw === null ? d : JSON.parse(raw);
+            };
+            window.GM_setValue = (k, val) => localStorage.setItem(P + k, JSON.stringify(val));
+            window.GM_deleteValue = (k) => localStorage.removeItem(P + k);
+            window.GM_addValueChangeListener = (k, cb) => {
+              const id = nextId++;
+              const fn = (e) => {
+                if (e.key !== P + k) return;
+                cb(k, e.oldValue === null ? undefined : JSON.parse(e.oldValue),
+                      e.newValue === null ? undefined : JSON.parse(e.newValue), true);
+              };
+              listeners.set(id, fn);
+              window.addEventListener("storage", fn);
+              return id;
+            };
+            window.GM_removeValueChangeListener = (id) => {
+              window.removeEventListener("storage", listeners.get(id));
+              listeners.delete(id);
+            };
+          })();
+          `;
+
+          fs.mkdirSync("dist", { recursive: true });
+          // @include replacement: embed the regex via JSON.stringify (no double escaping of the
+          // slashes); the whole userscript only runs on matching URLs.
+          const guard = `if (new RegExp(${JSON.stringify(regexSource)}).test(location.href)) {\n`;
+          fs.writeFileSync("dist/content.js", shim + "\n" + guard + src + "\n}\n");
+
+          // TODO: check/extend the Skyscanner domains (match patterns don't allow a wildcard TLD)
+          const tlds = ["com", "net", "de", "fr", "es", "co.uk", "it", "nl", "at", "ch"];
+          const matches = tlds.map((t) => `https://www.skyscanner.${t}/transport/*`);
+
+          fs.writeFileSync("dist/manifest.json", JSON.stringify({
+            manifest_version: 3,
+            // Texts live in skyscanner-extension/_locales/<lang>/messages.json
+            default_locale: "en",
+            name: "__MSG_extName__",
+            description: "__MSG_extDescription__",
+            version,
+            icons: { 16: "icons/icon16.png", 32: "icons/icon32.png", 48: "icons/icon48.png", 128: "icons/icon128.png" },
+            content_scripts: [{
+              matches,
+              js: ["content.js"],
+              run_at: "document_start",
+              world: "MAIN", // the page's fetch/XHR have to be patched (the isolated world doesn't see them)
+              all_frames: true, // the script scrapes via iframe
+            }],
+          }, null, 2));
+
+      - name: Copy icons and translations
+        run: |
+          cp -r skyscanner-extension/icons dist/icons
+          cp -r skyscanner-extension/_locales dist/_locales
+
+      # Upload the folder directly: GitHub zips it itself, and unpacked manifest.json sits in the
+      # root -> "Load unpacked" in Chrome works right away.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: skyscanner-extension
+          path: dist/
+
+      # --- Chrome Web Store: upload only on a new version and if the secrets exist ---
+      # The store rejects equal/lower versions; the cws-v<version> tag serves as the marker.
+      - name: Check whether the version was already uploaded
+        id: cws
+        run: |
+          VERSION=$(jq -r .version dist/manifest.json)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [ "$HAS_CWS" != "true" ]; then
+            echo "upload=false" >> "$GITHUB_OUTPUT"
+            echo "CWS secrets/variable missing -> upload skipped"
+          elif git ls-remote --exit-code --tags origin "refs/tags/cws-v$VERSION" >/dev/null 2>&1; then
+            echo "upload=false" >> "$GITHUB_OUTPUT"
+            echo "Version $VERSION was already uploaded -> skipped"
+          else
+            echo "upload=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Zip for the Web Store
+        if: steps.cws.outputs.upload == 'true'
+        run: cd dist && zip -r ../skyscanner-extension.zip .
+
+      - name: Upload to the Web Store
+        if: steps.cws.outputs.upload == 'true'
+        # Pinned to the commit (= v7.0.0): the action receives the store secrets, and a moved tag
+        # could otherwise run foreign code with them. v7 uses the Web Store API v2.
+        uses: mnao305/chrome-extension-upload@f549d5d654694a7722d6abfa64c97409ad5e64c1
+        with:
+          file-path: skyscanner-extension.zip
+          extension-id: ${{ env.CWS_EXTENSION_ID }}
+          publisher-id: ${{ vars.CWS_PUBLISHER_ID }}
+          client-id: ${{ secrets.CWS_CLIENT_ID }}
+          client-secret: ${{ secrets.CWS_CLIENT_SECRET }}
+          refresh-token: ${{ secrets.CWS_REFRESH_TOKEN }}
+          publish: false # draft in the dashboard; set to true to submit directly
+
+      - name: Mark version
+        if: steps.cws.outputs.upload == 'true'
+        run: |
+          git tag "cws-v${{ steps.cws.outputs.version }}"
+          git push origin "cws-v${{ steps.cws.outputs.version }}"
