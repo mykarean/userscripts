@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cheapest Round-Trip Dates Finder
 // @description  Automatically scans months of date combinations for the cheapest round trip and verifies real prices/layovers - automation Skyscanner's own flexible-date search doesn't offer. Just open a route (origin + destination) - no dates needed.
-// @version      20261126
+// @version      20261127
 // @author       mykarean
 // @icon         https://www.skyscanner.com/images/opengraph_v1.png
 // @include      /^https:\/\/www\.skyscanner\.[a-z.]+\/transport\/(flights|fluge|vols|vuelos)\/.+/
