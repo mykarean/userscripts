@@ -47,9 +47,13 @@ jobs:
           const include = meta("include"); // /regex/ -> checked in the wrapper
           const regexSource = include.replace(/^\/|\/$/g, "");
 
-          // @version is YYYYMMDD (e.g. 20261117) -> the manifest allows at most 65535 per part
-          const v = meta("version");
-          const version = `${v.slice(0, 4)}.${+v.slice(4, 6)}.${+v.slice(6, 8)}`;
+          // @version is YYYYMMDD with an optional .N suffix for several releases per day (e.g.
+          // 20261117 or 20261117.2) -> manifest year.month.day[.N]; each part is at most 65535
+          const parsed = /^(\d{8})(?:\.(\d+))?$/.exec(meta("version"));
+          if (!parsed) throw new Error("Unexpected @version format: " + meta("version"));
+          const [, ymd, suffix] = parsed;
+          const version =
+            `${ymd.slice(0, 4)}.${+ymd.slice(4, 6)}.${+ymd.slice(6, 8)}` + (suffix ? `.${+suffix}` : "");
 
           // --- GM_* shim: localStorage + storage event (also fires between iframes/tabs) ---
           const shim = `
