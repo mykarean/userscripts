@@ -57,6 +57,8 @@ jobs:
             const P = "gm_";
             const listeners = new Map();
             let nextId = 1;
+            // The script reads its @icon through GM_info (see the panel's icon button)
+            window.GM_info = { script: { icon: ${JSON.stringify(meta("icon"))} } };
             window.GM_getValue = (k, d) => {
               const raw = localStorage.getItem(P + k);
               return raw === null ? d : JSON.parse(raw);
