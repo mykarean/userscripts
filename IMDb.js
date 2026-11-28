@@ -1370,3 +1370,4 @@ async function main() {
 
 main();
 // GM_setValue("authorsMode", true);
+
