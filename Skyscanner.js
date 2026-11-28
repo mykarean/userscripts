@@ -3,7 +3,7 @@
 // @description  Finds the cheapest combination of outbound and return dates using flexible travel dates. Set the trip length and how far ahead to search – the script checks all matching date combinations and compares real prices and layovers, so you don't have to click through them one by one. To start, search a route on Skyscanner and choose "Flexible Dates" under travel dates.
 // @version      20261128
 // @author       mykarean
-// @icon         https://www.skyscanner.com/images/opengraph_v1.png
+// @icon         data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAMAAADVRocKAAABIFBMVEXe4ddkY1+iYgjz55yny/hfpPydnZhOJBT34GtmVx8oHxn84ijcqx6pLQ8Ab/ykjSsAbe+Xjl/VWRCJvPzfs0kUhP4Ab/sAqv8Af78A//+DfWg5PUe+wb3HrZM/REwAcf38yBcAAAD7/Pr90hv7tw8FAgQAbPn8lQv7pQ0Acf30igwqGALmdRAAff8AcfwACyszJgb91yoAcfwYEwsASaoAVf8Acf0AOYtNKANLNwjRqBQAcf4BWccAGU0CY9j61kzSZw0AM3hrNwMBU7gAcfwqhvzm6erDOhJZRgkAJ2fQdQvPRBKuiQ9uSAT1yipuVggAI1kAQ5iLaQkAbPkCEzYAAP+NSQTPlw/hbA//5km4lxSWdgv++K/U5fq5ubVVVFDfWB0VAAAAYHRSTlP//////////////////27/Iv//////lAMEAf///////v8A//////7//5L///8Hb////1P//wO2/////yz//////////8///////////////////wv/Af////////////988r2VAAAK10lEQVR42r1aCVviTBIOAbkd1JnZ3W/2ICTpJCZgEoJyyM2ogFwiAyIe//9fbHUnIQfBmXHHrUcRQ/K+3XV1VTdUzieFwrn95rJYPAM5Pf3baaDAZfx5sXhZKJjPnNtvHKE8//04xzfcX56dXnzP/pZ8vzg9u7zH4zr/sZ8Aj/3y7CL7brk4u7RggggKP3JHxf8B3eIoHuV+FIII/p7LFb9n/4B8LxIwP0Ehd3SR/UNycZQr+AnOc5+yf1A+bQ1B2eM/y/5RObPnQH0MvsNAfYB+PFqiyPgv34MgCOaffZ9fkjlggvMf73BPIfCtx11/nJsE/8gV3wMv3DVUkEa5uY+iCNCY4K/790xggJTEZvQ4mmpoIAQzfL//CxMU3jGB7B2KvbDhlM5xuv6ooXowQxHAMcHFLxvUlhk6ZtlwmifC6VPUC2S4wATvcaGZRlEEnsHC88DQ3OdI1C/FWK9cEhz7doxrliKDp8f9MY2JtMa+aKPOf6YhIdtUkYHQomd5Sx1lnigdUFcKwlJZ8XwalBSoo3Mqd/+z4TdRjGKpl1e0aBIGNfRETUD1NYSM6WauoREjSZVGoBXuwchHPyNQE2xYb8WpcAjdAUodpZ/CPF/rawjNOS7FjMAKEo0C/egICM7edBshOzDYOIPN2Qp/Q51sdlDlwi2JqZn6UbQahwmG4KqBRqByp28ngyaKhhnxQWY4hlkfA4O6ScXTPPM4Rigxmk8tAhmVgjz6FAh2bNxbIKQ2sNvgCJ0lw5z0kH/IY4ZUBnXQo94CC+MJKNXpHPAJQbJERiR4OS5ylC/RCdkSikWj0ZCBZti3BXScYgA+/yBzQKFnEKrp2IV4mEG1qoAZAJ8XtzMQSg0VuDt2wqP8TiSgEBuOh5+oaBLfVUJfdKk9zAMDTximaMVhk3ArIODwJUIwRMTF6jNQ3HGUwrok07inCr4JDAyqhQEm63gGqUJH0Tkxj+WkTdAYNOYlEsJVhLTNaDwlExir8HRpgRLRaxZLCJmABcqfKNDxmgd9wHAZPVU11Co/opdLmr69uSFT4DZIFiWSIqrEj5DE8/k8Kn8tqShEsZZELbe9pHyptA4qEdv5hwfA4HAsIS35GkokEtXu4RDg4UepyHmew5PZ9LXqFOJYFJeotDC+XbOsQ2AlVC8BmNhocTLYNH8rM3PNeI3iMcXX63Vr8rgyCUYIJSvTUQ3+ARb4kcACyAi54Fn2VbUJzrwEZU03neYmhpJYn1S4NSFJk4ATqyb+k8Sq0aYrAi/LgP9KueHZaxL0ONJ2CBQgaOfzSxR6AfS4BW5TYGHWT0AbfYUEqMxXMr43+cJ6xbYxEHzyR8GEAQXFklFYUVou6C0+fqvHwxR7/RKCeXSXCji2T6LbFeiTn6COapx4gkChYd2FDsnT1JDFADJpxeOtDGQ8wz989sWOAkzgT0XqOEUjGH6c2+LXppAXtATjYwDWSSqNEte74+84ychL0CyVVZQxomw4M3+0cLi56e5ISfsZgAO97gw/hMrZYIKeir0eoRiMAaTKE8UnsMP0cVAZ/JbBJlB8+FQIkhiaBRPMzECk/hVK4jwGsFjtjzD0R13X03CxbxPYyqv80zd8iroG48MUhF2ChUaxT/FWqxV+CoeMdAriKQOAGhk4DigwhD0FC3++YAMlMQsgmGnXT6bT84y+Pq7WUmMYMU4Wo5QZYMD46JlCDVHBBMbdLkEJUU8kWVouP0mk+T62c9/RS7/PuGfAVUPB+NsocxNAqcDwIn5MHpKnmZrt+VaIOS/2BIzrPfi9XYImgrhqH8KqJd0cipw7gjkXkduJuPlrEPxzyFNH2gSQRHX+5mbIcOLNrcy580+62neFmEtD0+gOOs4eqqeKNAkgBWmwjJ20oXaQ2g+uGTDYmdAokGAT8YJHQ0kDLUpfPXXFlgCSKCQ5IOAfHpwZcNw0Cf4/9RJYH0p+H7p+xctYB0bU6PlVBOWazsgneOxyW7LSAGQhLXYDC0M/kIBp+TUEq4ygJo8zUDOVd7xok2IYkeBK20STQIewFN8eVt0Ejvr4uN996tmGFl7DTRuzyNgSwEKDJmbRwGxfN0rs8PYQE/SDCRj+i0tLUajX6gJKc/xmBUmq/NUXyWpVd6meqSW0GBn+zeFtLJEKJoDZfvk3BRLBhdpYrMxKygSyr8YwlUG96SVoIlxlWubbVPHobw9v2/n2yUns0TUDxkMANWN7Wa0osS4tilBi3ykMR6MNx0NOJeXwlgDajAWariRJEkVRXqJbGP3NLam42hqzuxDYBKTqkmV4CIqlGlIhXUlQz3dRYqLgZc2ZAZjkTkUKHgnc24+B9gl+O19xaWgXHgsMyyz2DKU6x5dX0xXHk8LCt6LVywOUIM2AAvZtE3xa2TMB3iPkkjbmYCK48+SkLqntXASwWELVDgw8WYeVwxOiINpI76xjAfgmidaVxDa94qEUq5gdiWODhRKKvkS/Jci6RRhiMIN2N/nll/F53khWSN8Arw0zELYEixhLPYXD4XicRpkUVsokEYtVYqF4ED4fLCvUGHR6Qq9cLteznkCDVBFfm8/iSqRGYg6qq3B87aTqt/CxmSWGRjt9mCfZWU+DIzNmVHPbl2B4ySu8RtocaLycfLolQG6ErkKKXD+yF1/aEZHuk95JyO6uaALutWyR5JjGvY0eAI91tG5lFG/P70p2tJ1eRFnMK1rQ+PeBiyQ4RR7XI1a77hDYxW8HddPkTgh8KMkVo+bkPq9Z/ciWyGaa15+ibgZXdQ2Fo7Jsy+bd+XwFL5Rm9bCZrwLQPeDk1YxmZu3eVvjkbkB6MxIklW63W4lBwIxxITeCPioTb0288KIfXt5OASahOKWjq8Mxt2pK5UGjsWhAwJTukDKCTjJ0HV7rZmoOQifY9BD/ka05cP2Bi6CY3bs/CRt/uB62KkqGD4LHmRryDqLN9xLeA4DVZgtV9LexdowI+M0ddCJUy1m+gtAx/KzZQTHavsLTLk8tUpdvbS3CzuLEwRdp2Y8u0xrqKwvQbQMpY+IiadrV4EAjXti/lwbjj7uWX3GsEB+WrRUM0LuKshQZXlFh2s0O5HtFUZB65wIpUPd7d4tKRtxpM6Gb7yLZUZE8pKuK0h0Su/KK2RBAB0byqHtPjdq3b41bZgcfwruCXbgLuxbLZRfyvVHptrHvk+XpEW/NbjOc4N6/pvZvOtZxv2FpRxwqaq/UGeDt6kVjUC4tkm0Jm8FyTNNvBEHY2XZ8Y0sNmraRiY7LjNnOh2MnuLgpbDpesZEDP8fp3k1BC6RCD4fycJmE9IKLZsF8nrxCHNJ2guCqA7j69Zm1OAT3puBb25q9BumQ1bL9hHuMeAN+CSEMwTUnK7wgHJA29fPBlV3C423NtzdmhXqv13QMF2HdesCeqXTHY8WaIPxefX4mlXzkSrA2Zs9/afN9++YKdx0RMkQzeZUbDfOMwrwEP1cHnyPPz+QZvLX8mwdQgknBPkcOvgpuzxQiNq8l9ub4b2/vYzWY7eXzFpF8cPCMVXOAr7m393/tgMK/7XxgNwbPkc/OuA8ixABsxH1A8a4jFgC7OnA1H5Q5cGIAsMCB4D5ied8hkclhjdiUiBUiW8tYh0TvOubarh0uEkrYc8z1voM6h4ToJRJ5jgh7Duree9ToIdnNc66jxg8/LP34496PP7D++CP3j//SwMd/7eHjv7jx8V89+T98eeYjvv7zX6miC/idACdhAAAAAElFTkSuQmCC
 // @include      /^https:\/\/www\.skyscanner\.[a-z.]+\/transport\/(flights|fluge|vols|vuelos)\/.+/
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -24,6 +24,7 @@
     const DEFAULT_RANGE_MONTHS = 6;
     const DEFAULT_TARGET_STAY_WEEKS = 3;
     const DEFAULT_FLEXIBILITY_PERCENT = 15;
+    const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0]; // weekday buttons, Monday first (Date#getDay values)
 
     const REQUEST_DELAY_MS = 400;
     const SCRAPE_TIMEOUT_MS = 30000;
@@ -133,6 +134,10 @@
             searchRange: "Suchzeitraum (Monate, max 12)",
             targetStay: "Ziel-Aufenthalt (Wochen)",
             flexibility: "Flexibilität (± %)",
+            outboundDays: "Hinflug-Tage",
+            returnDays: "Rückflug-Tage",
+            directOnly: "Nur Direktflüge",
+            anyDay: "alle",
             startSearch: "Suche starten",
             searchAgain: "Erneut suchen",
             nightsRange: (min, max) => `(${min}-${max} Nächte)`,
@@ -145,7 +150,8 @@
             realPriceFailures: "Einige echte Preise konnten nicht geladen werden",
             reloadHint: "Skyscanner blockiert evtl. Anfragen – hilft ein erneuter Versuch nicht, Seite neu laden.",
             retryFailed: "Fehlgeschlagene erneut laden",
-            from: "Hin- und Rückflug ab",
+            closePanel: "Schließen",
+            openPanel: "Suche öffnen",
             direct: "Direkt ab",
             oneStop: "1 Stopp ab",
             twoOrMoreStops: "2+ Stopps ab",
@@ -166,6 +172,10 @@
             searchRange: "Search range (months, max 12)",
             targetStay: "Target stay (weeks)",
             flexibility: "Flexibility (± %)",
+            outboundDays: "Outbound days",
+            returnDays: "Return days",
+            directOnly: "Direct flights only",
+            anyDay: "any",
             startSearch: "Start search",
             searchAgain: "Search again",
             nightsRange: (min, max) => `(${min}-${max} nights)`,
@@ -178,7 +188,8 @@
             realPriceFailures: "Some real prices could not be loaded",
             reloadHint: "Skyscanner may be blocking requests – if retrying doesn't help, reload the page.",
             retryFailed: "Retry failed",
-            from: "Round trip from",
+            closePanel: "Close",
+            openPanel: "Open search",
             direct: "Direct from",
             oneStop: "1 stop from",
             twoOrMoreStops: "2+ stops from",
@@ -199,6 +210,10 @@
             searchRange: "Rango de búsqueda (meses, máx. 12)",
             targetStay: "Duración objetivo (semanas)",
             flexibility: "Flexibilidad (± %)",
+            outboundDays: "Días de ida",
+            returnDays: "Días de vuelta",
+            directOnly: "Solo vuelos directos",
+            anyDay: "todos",
             startSearch: "Iniciar búsqueda",
             searchAgain: "Buscar de nuevo",
             nightsRange: (min, max) => `(${min}-${max} noches)`,
@@ -211,7 +226,8 @@
             realPriceFailures: "Algunos precios reales no se pudieron cargar",
             reloadHint: "Skyscanner podría estar bloqueando las solicitudes: si reintentar no ayuda, recarga la página.",
             retryFailed: "Reintentar los fallidos",
-            from: "Ida y vuelta desde",
+            closePanel: "Cerrar",
+            openPanel: "Abrir la búsqueda",
             direct: "Directo desde",
             oneStop: "1 escala desde",
             twoOrMoreStops: "2+ escalas desde",
@@ -232,6 +248,10 @@
             searchRange: "Période de recherche (mois, max 12)",
             targetStay: "Durée du séjour visée (semaines)",
             flexibility: "Flexibilité (± %)",
+            outboundDays: "Jours d'aller",
+            returnDays: "Jours de retour",
+            directOnly: "Vols directs uniquement",
+            anyDay: "tous",
             startSearch: "Lancer la recherche",
             searchAgain: "Relancer la recherche",
             nightsRange: (min, max) => `(${min}-${max} nuits)`,
@@ -244,7 +264,8 @@
             realPriceFailures: "Certains prix réels n'ont pas pu être chargés",
             reloadHint: "Skyscanner bloque peut-être les requêtes : si réessayer ne suffit pas, rechargez la page.",
             retryFailed: "Réessayer les échecs",
-            from: "Aller-retour à partir de",
+            closePanel: "Fermer",
+            openPanel: "Ouvrir la recherche",
             direct: "Direct à partir de",
             oneStop: "1 escale à partir de",
             twoOrMoreStops: "2+ escales à partir de",
@@ -265,6 +286,10 @@
             searchRange: "検索範囲（月数、最大12）",
             targetStay: "希望滞在期間（週）",
             flexibility: "許容範囲（± %）",
+            outboundDays: "往路の曜日",
+            returnDays: "復路の曜日",
+            directOnly: "直行便のみ",
+            anyDay: "すべて",
             startSearch: "検索開始",
             searchAgain: "再検索",
             nightsRange: (min, max) => `(${min}〜${max}泊)`,
@@ -277,7 +302,8 @@
             realPriceFailures: "一部の実際の料金を読み込めませんでした",
             reloadHint: "Skyscannerがリクエストをブロックしている可能性があります。再試行で改善しない場合は、ページを再読み込みしてください。",
             retryFailed: "失敗分を再試行",
-            from: "往復",
+            closePanel: "閉じる",
+            openPanel: "検索を開く",
             direct: "直行",
             oneStop: "経由1回",
             twoOrMoreStops: "経由2回以上",
@@ -446,7 +472,8 @@
         return Number.isFinite(min) ? min : null;
     }
 
-    function collectCandidates(gridResponse, todayDate, horizonDate, minNights, maxNights, acc) {
+    // filters: { outDays: Set, inDays: Set (Date#getDay values), directOnly: boolean }
+    function collectCandidates(gridResponse, todayDate, horizonDate, minNights, maxNights, acc, filters) {
         const grid = gridResponse?.PriceGrids?.Grid;
         if (!grid) return;
         const traces = gridResponse.Traces;
@@ -455,18 +482,21 @@
         for (let col = 0; col < grid[0]?.length || 0; col++) {
             const outDate = new Date(outYear, outMonth - 1, col + 1);
             if (outDate < todayDate || outDate > horizonDate) continue;
+            if (!filters.outDays.has(outDate.getDay())) continue;
             for (let row = 0; row < grid.length; row++) {
                 const cell = grid[row][col];
                 const directPrice = cell?.Direct?.Price;
                 const indirectPrice = cell?.Indirect?.Price;
-                if (directPrice == null && indirectPrice == null) continue;
-                const isDirect = directPrice != null && (indirectPrice == null || directPrice <= indirectPrice);
+                if (filters.directOnly ? directPrice == null : directPrice == null && indirectPrice == null) continue;
+                const isDirect =
+                    filters.directOnly || (directPrice != null && (indirectPrice == null || directPrice <= indirectPrice));
                 const price = isDirect ? directPrice : indirectPrice;
                 const traceRefs = (isDirect ? cell.Direct : cell.Indirect).TraceRefs;
                 const quotedAt = traceQuotedAt(traces, traceRefs);
                 const inDate = new Date(inYear, inMonth - 1, row + 1);
                 const nights = Math.round((inDate - outDate) / 86400000);
                 if (nights < minNights || nights > maxNights) continue;
+                if (!filters.inDays.has(inDate.getDay())) continue;
                 acc.push({ outDate, inDate, nights, price, isDirect, quotedAt });
             }
         }
@@ -725,6 +755,42 @@
     #sky-panel-scroll { max-height:calc(100vh - 34px); max-height:calc(100dvh - 34px); overflow-y:scroll; overflow-x:hidden; padding:16px;
       scrollbar-width:none; }
     #sky-panel-scroll::-webkit-scrollbar { display:none; }
+    .sky-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 0 12px; }
+    #sky-panel .sky-head h3 { margin:0; }
+    #sky-panel.sky-closed { display:none; }
+    #sky-fab:not([hidden]) { display:flex; }
+    #sky-close { display:block; flex:0 0 auto; width:36px; height:36px; margin:-6px -6px -6px 0; padding:0; border:none;
+      border-radius:50%; background:transparent; color:#5b6472; font-size:20px; line-height:1; cursor:pointer; }
+    #sky-close:hover { background:#eef0f3; }
+    #sky-fab { display:none; position:fixed; bottom:16px; right:16px; width:56px; height:56px; padding:0; border:none;
+      border-radius:14px; background:transparent url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAMAAADVRocKAAABIFBMVEXe4ddkY1+iYgjz55yny/hfpPydnZhOJBT34GtmVx8oHxn84ijcqx6pLQ8Ab/ykjSsAbe+Xjl/VWRCJvPzfs0kUhP4Ab/sAqv8Af78A//+DfWg5PUe+wb3HrZM/REwAcf38yBcAAAD7/Pr90hv7tw8FAgQAbPn8lQv7pQ0Acf30igwqGALmdRAAff8AcfwACyszJgb91yoAcfwYEwsASaoAVf8Acf0AOYtNKANLNwjRqBQAcf4BWccAGU0CY9j61kzSZw0AM3hrNwMBU7gAcfwqhvzm6erDOhJZRgkAJ2fQdQvPRBKuiQ9uSAT1yipuVggAI1kAQ5iLaQkAbPkCEzYAAP+NSQTPlw/hbA//5km4lxSWdgv++K/U5fq5ubVVVFDfWB0VAAAAYHRSTlP//////////////////27/Iv//////lAMEAf///////v8A//////7//5L///8Hb////1P//wO2/////yz//////////8///////////////////wv/Af////////////988r2VAAAK10lEQVR42r1aCVviTBIOAbkd1JnZ3W/2ICTpJCZgEoJyyM2ogFwiAyIe//9fbHUnIQfBmXHHrUcRQ/K+3XV1VTdUzieFwrn95rJYPAM5Pf3baaDAZfx5sXhZKJjPnNtvHKE8//04xzfcX56dXnzP/pZ8vzg9u7zH4zr/sZ8Aj/3y7CL7brk4u7RggggKP3JHxf8B3eIoHuV+FIII/p7LFb9n/4B8LxIwP0Ehd3SR/UNycZQr+AnOc5+yf1A+bQ1B2eM/y/5RObPnQH0MvsNAfYB+PFqiyPgv34MgCOaffZ9fkjlggvMf73BPIfCtx11/nJsE/8gV3wMv3DVUkEa5uY+iCNCY4K/790xggJTEZvQ4mmpoIAQzfL//CxMU3jGB7B2KvbDhlM5xuv6ooXowQxHAMcHFLxvUlhk6ZtlwmifC6VPUC2S4wATvcaGZRlEEnsHC88DQ3OdI1C/FWK9cEhz7doxrliKDp8f9MY2JtMa+aKPOf6YhIdtUkYHQomd5Sx1lnigdUFcKwlJZ8XwalBSoo3Mqd/+z4TdRjGKpl1e0aBIGNfRETUD1NYSM6WauoREjSZVGoBXuwchHPyNQE2xYb8WpcAjd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") center/cover no-repeat;
+      font-size:28px; line-height:1; cursor:pointer; align-items:center; justify-content:center; z-index:999999;
+      filter:drop-shadow(0 3px 6px rgba(20,30,50,0.35)); }
+    /* Phones: fill the whole screen instead of a floating panel */
+    @media (max-width: 600px) {
+      #sky-panel { inset:0; width:auto; max-width:none; height:100vh; height:100dvh; max-height:none;
+        border:0; border-radius:0; box-shadow:none; }
+      #sky-panel, #sky-panel-scroll { overscroll-behavior:contain; touch-action:pan-y; }
+      html.sky-lock, html.sky-lock body { overflow:hidden !important; }
+      #sky-panel-scroll { max-height:100vh; max-height:100dvh; height:100%; font-size:14px; }
+      #sky-panel h3 { font-size:17px; }
+      /* Title bar stays visible while the list scrolls (cancels the scroll area's 16px padding) */
+      .sky-head { position:sticky; top:-16px; z-index:2; background:#fff; margin:-16px -16px 12px;
+        padding:16px 16px 10px; border-bottom:1px solid #e2e5ea; }
+      #sky-scroll-thumb { display:none !important; }
+      #sky-settings summary { font-size:15px; color:#1f2430; padding:12px 14px; border:1px solid #d3d8e0;
+        border-radius:8px; background:#f8fafc; }
+      #sky-settings summary:active { background:#eef0f3; }
+      #sky-panel .sky-field { margin-top:14px; }
+      #sky-panel input { width:84px; padding:8px 10px; font-size:16px; }
+      #sky-manual-locale .sky-field input { width:130px; }
+      #sky-panel .sky-days-field { margin-top:14px; }
+      #sky-panel .sky-day { padding:10px 0; font-size:13px; }
+      #sky-panel input[type="checkbox"] { width:22px; height:22px; padding:0; }
+      #sky-start { margin-top:18px; padding:13px; font-size:15px; }
+      #sky-status, #sky-retry { font-size:13px; }
+      #sky-retry { padding:10px; }
+    }
     #sky-scroll-thumb { position:absolute; top:0; right:3px; width:6px; border-radius:3px;
       background:#d3d8e0; cursor:pointer; display:none; }
     #sky-scroll-thumb:hover, #sky-scroll-thumb.sky-dragging { background:#b7bfc9; }
@@ -737,6 +803,14 @@
     #sky-settings[open] summary::before { content:"▾ "; }
     #sky-panel .sky-field { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:8px; }
     #sky-panel .sky-field label { color:#5b6472; }
+    #sky-panel .sky-days-field { margin-top:8px; }
+    #sky-panel .sky-days-label { display:block; color:#5b6472; margin-bottom:4px; }
+    #sky-panel .sky-days-hint { color:#8a929e; }
+    #sky-panel .sky-days-hint[hidden] { display:none; }
+    #sky-panel .sky-days { display:flex; gap:4px; }
+    #sky-panel .sky-day { flex:1 1 0; min-width:0; padding:4px 0; border:1px solid #d3d8e0; border-radius:6px;
+      background:#fff; color:#5b6472; font:inherit; font-size:12px; cursor:pointer; }
+    #sky-panel .sky-day[aria-pressed="true"] { background:#0062e3; border-color:#0062e3; color:#fff; font-weight:600; }
     #sky-panel input { width:60px; padding:4px 6px; border:1px solid #d3d8e0; border-radius:6px;
       font:inherit; text-align:right; }
     #sky-panel input:focus { outline:2px solid #0062e3; outline-offset:1px; }
@@ -762,11 +836,11 @@
     .sky-card .sky-price-row { display:flex; align-items:center; gap:8px; }
     .sky-card .sky-rank { flex:0 0 auto; width:20px; height:20px; border-radius:50%; background:#e2e5ea; color:#5b6472;
       font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; }
-    .sky-card .sky-price { color:#1f2430; font-weight:700; font-size:14px; cursor:default; }
+    .sky-card .sky-price { color:#1f2430; font-weight:700; font-size:17px; cursor:default; }
     .sky-card .sky-dates { color:#3a4250; margin-top:2px; }
-    .sky-card .sky-real-prices { display:flex; gap:3px; flex-wrap:wrap; margin-top:6px; }
+    .sky-card .sky-real-prices { display:flex; flex-direction:column; align-items:flex-start; gap:3px; margin-top:6px; }
     .sky-card .sky-real-prices .sky-chip { background:#eef0f3; border-radius:4px; padding:2px 6px; font-size:11px; color:#3a4250; white-space:nowrap; }
-    .sky-card .sky-real-prices .sky-chip-muted { background:transparent; color:#b0b6bf; }
+    .sky-card .sky-real-prices .sky-chip-muted { background:transparent; color:#6b7280; }
     .sky-card .sky-real-prices .sky-chip-best-price { color:#0a8a4a; font-weight:700; }
     .sky-card .sky-real-prices .sky-chip-shortest-layover { outline:2px solid #0062e3; outline-offset:-2px; }
     .sky-loading { display:flex; align-items:center; gap:6px; color:#6b7280; font-size:11px; }
@@ -841,6 +915,18 @@
         const rangeValue = savedSettings?.rangeMonths ?? DEFAULT_RANGE_MONTHS;
         const targetStayValue = savedSettings?.targetStayWeeks ?? DEFAULT_TARGET_STAY_WEEKS;
         const flexibilityValue = savedSettings?.flexibilityPercent ?? DEFAULT_FLEXIBILITY_PERCENT;
+        // No weekday selected = every day is allowed. Older saved settings listed all seven days.
+        const validDays = (v) => (Array.isArray(v) && v.length < 7 && v.every((d) => DAY_ORDER.includes(d)) ? v : []);
+        const outDaysValue = validDays(savedSettings?.outDays);
+        const inDaysValue = validDays(savedSettings?.inDays);
+        const directOnlyValue = savedSettings?.directOnly === true;
+        // Short weekday names in the UI language (2024-01-07 was a Sunday = Date#getDay 0)
+        const weekdayLabel = (day) =>
+            new Intl.DateTimeFormat(uiLang(), { weekday: "short" }).format(new Date(2024, 0, 7 + day)).replace(/\.$/, "");
+        const daysHtml = (selected) =>
+            DAY_ORDER.map(
+                (d) => `<button type="button" class="sky-day" data-day="${d}" aria-pressed="${selected.includes(d)}">${weekdayLabel(d)}</button>`,
+            ).join("");
 
         const styleTag = document.createElement("style");
         styleTag.textContent = STYLE;
@@ -850,12 +936,15 @@
         panel.id = "sky-panel";
         panel.innerHTML = `
       <div id="sky-panel-scroll" tabindex="0">
-        <h3>${s.title}</h3>
+        <div class="sky-head"><h3>${s.title}</h3><button id="sky-close" type="button" aria-label="${s.closePanel}" title="${s.closePanel}">✕</button></div>
         <details id="sky-settings" open>
           <summary>${s.settings}</summary>
           <div class="sky-field"><label for="sky-range">${s.searchRange}</label><input id="sky-range" type="number" min="1" max="12" value="${rangeValue}"></div>
           <div class="sky-field"><label for="sky-target-w">${s.targetStay}</label><input id="sky-target-w" type="number" min="1" max="6" step="0.5" value="${targetStayValue}"></div>
           <div class="sky-field"><label for="sky-tolerance">${s.flexibility} <span id="sky-nights-preview" style="color:#6b7280"></span></label><input id="sky-tolerance" type="number" min="0" max="100" value="${flexibilityValue}"></div>
+          <div class="sky-days-field"><span class="sky-days-label">${s.outboundDays} <span class="sky-days-hint">· ${s.anyDay}</span></span><div class="sky-days" data-group="out">${daysHtml(outDaysValue)}</div></div>
+          <div class="sky-days-field"><span class="sky-days-label">${s.returnDays} <span class="sky-days-hint">· ${s.anyDay}</span></span><div class="sky-days" data-group="in">${daysHtml(inDaysValue)}</div></div>
+          <div class="sky-field"><label for="sky-direct-only">${s.directOnly}</label><input id="sky-direct-only" type="checkbox"${directOnlyValue ? " checked" : ""}></div>
           <div id="sky-manual-locale" hidden></div>
           <button id="sky-start">${s.startSearch}</button>
         </details>
@@ -867,7 +956,32 @@
       <div id="sky-scroll-thumb" aria-hidden="true"></div>
     `;
         document.body.appendChild(panel);
-        statusEl = panel.querySelector("#sky-status");
+
+        // The panel can be closed at any screen size and reopened via the icon button.
+        const fab = document.createElement("button");
+        fab.id = "sky-fab";
+        fab.type = "button";
+        fab.hidden = true;
+        fab.setAttribute("aria-label", s.openPanel);
+        fab.title = s.openPanel;
+        document.body.appendChild(fab);
+        // While the full-screen panel is open, the page behind it must not scroll.
+        const phoneQuery = window.matchMedia("(max-width: 600px)");
+        const updateScrollLock = () => {
+            const locked = phoneQuery.matches && !panel.classList.contains("sky-closed");
+            document.documentElement.classList.toggle("sky-lock", locked);
+        };
+        const setClosed = (closed) => {
+            panel.classList.toggle("sky-closed", closed);
+            fab.hidden = !closed;
+            updateScrollLock();
+        };
+        phoneQuery.addEventListener("change", updateScrollLock);
+        updateScrollLock();
+        panel.querySelector("#sky-close").onclick = () => setClosed(true);
+        fab.onclick = () => setClosed(false);
+
+        statusEl =panel.querySelector("#sky-status");
         resultsEl = panel.querySelector("#sky-results");
         progressTrack = panel.querySelector("#sky-progress-track");
         progressBar = panel.querySelector("#sky-progress-bar");
@@ -894,14 +1008,44 @@
                 rangeMonths: Number(rangeInput.value),
                 targetStayWeeks: Number(targetInput.value),
                 flexibilityPercent: Number(toleranceInput.value),
+                outDays: selectedDays("out"),
+                inDays: selectedDays("in"),
+                directOnly: panel.querySelector("#sky-direct-only").checked,
             });
         };
+        // The "any" hint is only shown while no weekday of a group is selected
+        const updateDayHints = () => {
+            panel.querySelectorAll(".sky-days-field").forEach((field) => {
+                const none = !field.querySelector('.sky-day[aria-pressed="true"]');
+                field.querySelector(".sky-days-hint").hidden = !none;
+            });
+        };
+        panel.querySelectorAll(".sky-day").forEach((btn) => {
+            btn.addEventListener("click", () => {
+                btn.setAttribute("aria-pressed", String(btn.getAttribute("aria-pressed") !== "true"));
+                updateDayHints();
+                persistSettings();
+            });
+        });
+        updateDayHints();
+        panel.querySelector("#sky-direct-only").addEventListener("change", persistSettings);
         targetInput.addEventListener("input", updatePreview);
         toleranceInput.addEventListener("input", updatePreview);
         [rangeInput, targetInput, toleranceInput].forEach((input) => input.addEventListener("input", persistSettings));
         updatePreview();
 
         setupCustomScrollbar();
+    }
+
+    // Weekdays (Date#getDay values) currently selected in a group; empty = none selected
+    function selectedDays(group) {
+        return [...panel.querySelectorAll(`.sky-days[data-group="${group}"] .sky-day[aria-pressed="true"]`)].map((b) => Number(b.dataset.day));
+    }
+
+    // Search filters from the panel; no weekday selected means every day is allowed
+    function readFilters() {
+        const days = (group) => new Set(selectedDays(group).length ? selectedDays(group) : DAY_ORDER);
+        return { outDays: days("out"), inDays: days("in"), directOnly: panel.querySelector("#sky-direct-only").checked };
     }
 
     function setupCustomScrollbar() {
@@ -996,7 +1140,7 @@
           <a class="sky-card${c.realStopPrices === null ? " sky-card-failed" : ""}" data-idx="${i}" href="${skyscannerLink(origin, destination, c.outDate, c.inDate)}" target="_blank" rel="noopener noreferrer">
             <div class="sky-price-row">
               <span class="sky-rank">${i + 1}</span>
-              <span class="sky-price"${c.quotedAt ? ` title="${s.priceSnapshotFrom(fmtDateTime(c.quotedAt))}"` : ""}>${s.from} ${formatPrice(displayPrice, formatHint)}</span>
+              <span class="sky-price"${c.quotedAt ? ` title="${s.priceSnapshotFrom(fmtDateTime(c.quotedAt))}"` : ""}>${formatPrice(displayPrice, formatHint)}</span>
             </div>
             <div class="sky-dates">${fmtDate(c.outDate)} → ${fmtDate(c.inDate)} (${s.nightsSuffix(c.nights)})</div>
             <span class="sky-real-prices" data-real-prices>${c.realStopPrices !== undefined ? stopPricesLabel(c.realStopPrices, isShortestOneLayover) : ""}</span>
@@ -1011,7 +1155,7 @@
         let shortestOneLayoverMinutes = Infinity;
         lastTop.forEach((c, i) => {
             const minutes = c.realStopPrices?.categories?.one?.maxLayoverMinutes;
-            if (Number.isFinite(minutes) && minutes > 0 && minutes < shortestOneLayoverMinutes) {
+            if (!directOnly && Number.isFinite(minutes) && minutes > 0 && minutes < shortestOneLayoverMinutes) {
                 shortestOneLayoverMinutes = minutes;
                 shortestOneLayoverIdx = i;
             }
@@ -1035,10 +1179,14 @@
         return t().maxLayover(h, m);
     }
 
+    // Set at the start of each search from the "Direct flights only" checkbox; retries of failed
+    // price lookups keep using the value the search was started with.
+    let directOnly = false;
+
     function directOnePrices(payload) {
         const stopPrices = payload?.stopPrices;
         const direct = stopPrices?.direct?.isPresent ? stopPrices.direct.rawPrice : Infinity;
-        const one = stopPrices?.one?.isPresent ? stopPrices.one.rawPrice : Infinity;
+        const one = !directOnly && stopPrices?.one?.isPresent ? stopPrices.one.rawPrice : Infinity;
         return { direct, one };
     }
 
@@ -1091,11 +1239,12 @@
         };
         const parts = [];
         if (stopPrices.direct?.isPresent) parts.push(chip("direct", s.direct, stopPrices.direct.formattedPrice, "", false));
-        if (stopPrices.one?.isPresent) {
+        else if (directOnly) parts.push(chip("direct", s.direct, "–", "", true));
+        if (!directOnly && stopPrices.one?.isPresent) {
             const layover = fmtLayover(categories?.one?.maxLayoverMinutes);
             parts.push(chip("one", s.oneStop, stopPrices.one.formattedPrice, layover, false));
         }
-        if (stopPrices.twoOrMore?.isPresent) {
+        if (!directOnly && stopPrices.twoOrMore?.isPresent) {
             const layover = fmtLayover(categories?.twoOrMore?.maxLayoverMinutes);
             parts.push(chip("twoOrMore", s.twoOrMoreStops, stopPrices.twoOrMore.formattedPrice, layover, true));
         }
@@ -1133,7 +1282,7 @@
             const priceEl = cardEl?.querySelector(".sky-price");
             const realPrice = acceptablePrice(payload);
             if (priceEl && Number.isFinite(realPrice))
-                priceEl.textContent = `${s.from} ${formatPrice(realPrice, currencyFormatFromPayload(payload))}`;
+                priceEl.textContent = formatPrice(realPrice, currencyFormatFromPayload(payload));
             done++;
             setProgress(done / total);
             setStatus(s.checkingPrices(done, total));
@@ -1172,6 +1321,8 @@
             Number(panel.querySelector("#sky-target-w").value),
             Number(panel.querySelector("#sky-tolerance").value),
         );
+        const filters = readFilters();
+        directOnly = filters.directOnly;
         resultsEl.innerHTML = "";
         logDebug(
             DEBUG,
@@ -1195,7 +1346,7 @@
                     DEBUG,
                     `[Sky] Grid ${ymKey(outYM)}→${ymKey(inYM)}: ${fromCache ? "from cache" : "fresh fetch"}, raw min price (any nights)=${gridMinPrice(result.data)}`,
                 );
-                collectCandidates(result.data, today, horizonDate, minNights, maxNights, candidates);
+                collectCandidates(result.data, today, horizonDate, minNights, maxNights, candidates, filters);
                 logDebug(DEBUG, `[Sky]   candidates so far: ${candidates.length}`);
             } catch (err) {
                 failedPairs.push(`${ymKey(outYM)}→${ymKey(inYM)}`);
